@@ -1,9 +1,8 @@
 "use client";
 
 import { Suspense } from "react";
-import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 import {
   collection,
   query,
@@ -17,19 +16,26 @@ import {
 import { db, auth } from "../../lib/firebase";
 import ProtectedRoute from "../../components/ProtectedRoute";
 
-// MAIN PAGE COMPONENT (NO HOOKS HERE!)
+// MAIN PAGE - NO HOOKS HERE!
 export default function NewMessagePage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
-        <div className="w-10 h-10 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"></div>
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-[#0a0a0a] text-white flex items-center justify-center">
+          <div className="text-center">
+            <div className="w-10 h-10 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-gray-400">Loading...</p>
+          </div>
+        </div>
+      }
+    >
       <NewMessageContent />
     </Suspense>
   );
 }
-export default function NewMessage() {
+
+// CHILD COMPONENT - ALL HOOKS LIVE HERE!
+function NewMessageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const targetUserId = searchParams.get("userId");
