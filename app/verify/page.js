@@ -1,11 +1,17 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { usePaystackPayment } from "react-paystack";
+import { useState, useEffect, Suspense } from "react";
+import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 import { doc, updateDoc, getDoc } from "firebase/firestore";
 import { db, auth } from "../lib/firebase";
 import ProtectedRoute from "../components/ProtectedRoute";
+
+//  THIS IS THE MAGIC LINE - LOADS PAYSTACK ONLY IN BROWSER!
+const PaystackButton = dynamic(
+  () => import("react-paystack").then((mod) => mod.PaystackButton),
+  { ssr: false },
+);
 
 export default function Verification() {
   const router = useRouter();
@@ -30,12 +36,11 @@ export default function Verification() {
     reference: `YouChat_Verify_${Date.now()}`,
     email: auth.currentUser?.email || "",
     amount: 1000 * 100, // ₦1,000 in kobo
-    publicKey: "pk_live_YOUR_PAYSTACK_PUBLIC_KEY_HERE", // Replace with your key!
+    publicKey: pk_test_4aea2dad66c9b34c758635932358cf968e81f54c, //  USE TEST KEY FOR NOW!
   };
 
   const onSuccess = async (reference) => {
     try {
-      // Update user in Firestore
       await updateDoc(doc(db, "users", auth.currentUser.uid), {
         isVerified: true,
         verifiedAt: new Date(),
@@ -56,8 +61,6 @@ export default function Verification() {
   const onClose = () => {
     alert("Payment cancelled. You can try again anytime!");
   };
-
-  const initializePayment = usePaystackPayment(config);
 
   if (loading) {
     return (
@@ -113,7 +116,7 @@ export default function Verification() {
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <span className="text-2xl">🎁</span>
+                <span className="text-2xl"></span>
                 <div>
                   <p className="font-semibold">Exclusive Features</p>
                   <p className="text-sm text-gray-400">
@@ -128,7 +131,7 @@ export default function Verification() {
           <div className="bg-[#111] border border-gray-800 rounded-2xl p-8 mb-8">
             <div className="text-center mb-6">
               <p className="text-gray-400 mb-2">Price</p>
-              <p className="text-5xl font-bold text-cyan-400">1,000</p>
+              <p className="text-5xl font-bold text-cyan-400">₦1,000</p>
               <p className="text-sm text-gray-500 mt-2">
                 Per month (auto-renewal)
               </p>
@@ -152,7 +155,7 @@ export default function Verification() {
                   <span
                     className={user?.avatar ? "text-green-400" : "text-red-400"}
                   >
-                    {user?.avatar ? "✓" : ""}
+                    {user?.avatar ? "✓" : "✗"}
                   </span>
                   Profile picture uploaded
                 </li>
@@ -169,24 +172,35 @@ export default function Verification() {
                   At least 100 followers ({user?.followers?.length || 0}/100)
                 </li>
                 <li className="flex items-center gap-2">
-                  <span className="text-gray-400"></span>
+                  <span className="text-gray-400">️</span>
                   Account age 30+ days
                 </li>
               </ul>
             </div>
 
-            {/* PAY BUTTON */}
-            <button
-              onClick={() => initializePayment(onSuccess, onClose)}
-              disabled={
-                !user?.fullName ||
-                !user?.avatar ||
-                (user?.followers?.length || 0) < 100
+            {/* PAY BUTTON - NOW SAFE WITH DYNAMIC IMPORT! */}
+            <Suspense
+              fallback={
+                <button
+                  disabled
+                  className="w-full bg-gray-700 text-white font-bold py-4 rounded-xl"
+                >
+                  Loading Payment...
+                </button>
               }
-              className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 disabled:from-gray-700 disabled:to-gray-600 text-white font-bold py-4 rounded-xl transition text-lg"
             >
-              Pay ₦1,000 & Get Verified
-            </button>
+              <PaystackButton
+                {...config}
+                onSuccess={onSuccess}
+                onClose={onClose}
+                className="w-full bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 disabled:from-gray-700 disabled:to-gray-600 text-white font-bold py-4 rounded-xl transition text-lg"
+                disabled={
+                  !user?.fullName ||
+                  !user?.avatar ||
+                  (user?.followers?.length || 0) < 100
+                }
+              />
+            </Suspense>
 
             <p className="text-xs text-gray-500 text-center mt-4">
               Secure payment powered by Paystack
