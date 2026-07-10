@@ -36,7 +36,7 @@ export default function Verification() {
     reference: `YouChat_Verify_${Date.now()}`,
     email: auth.currentUser?.email || "",
     amount: 1000 * 100, // ₦1,000 in kobo
-    publicKey: pk_test_4aea2dad66c9b34c758635932358cf968e81f54c, //  USE TEST KEY FOR NOW!
+    publicKey: "pk_test_4aea2dad66c9b34c758635932358cf968e81f54c", //  USE TEST KEY FOR NOW!
   };
 
   const onSuccess = async (reference) => {
