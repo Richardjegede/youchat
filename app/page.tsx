@@ -23,7 +23,7 @@ import { onSnapshot } from "firebase/firestore";
 import StoryViewer from "./components/StoryViewer";
 
 export default function Home() {
-  const [feedItems, setFeedItems] = useState([]);
+  const [feedItems, setFeedItems] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState("all");
   const [loading, setLoading] = useState(true);
   const [showPostModal, setShowPostModal] = useState(false);
