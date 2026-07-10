@@ -89,7 +89,10 @@ export default function Feed() {
   }, [searchQuery, selectedCategory, products]);
 
   // ❤️ TOGGLE FAVORITE LOGIC
-  const handleToggleFavorite = async (e, productId) => {
+  const handleToggleFavorite = async (
+    e: React.MouseEvent,
+    productId: string,
+  ) => {
     e.preventDefault(); // Prevents the Link from clicking through
     e.stopPropagation();
 
