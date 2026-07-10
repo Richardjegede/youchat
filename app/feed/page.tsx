@@ -18,8 +18,8 @@ import Link from "next/link";
 
 export default function Feed() {
   const router = useRouter();
-  const [products, setProducts] = useState([]);
-  const [filteredProducts, setFilteredProducts] = useState([]);
+  const [products, setProducts] = useState<any[]>([]);
+  const [filteredProducts, setFilteredProducts] = useState<any[]>([]);
   const [favorites, setFavorites] = useState(new Set()); // Stores IDs of liked items
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
