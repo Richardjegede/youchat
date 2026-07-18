@@ -124,6 +124,14 @@ export default function Login() {
           >
             {loading ? "Logging in..." : "Log In"}
           </button>
+          <div className="text-right mt-2">
+            <Link
+              href="/forgot-password"
+              className="text-sm text-cyan-400 hover:text-cyan-300"
+            >
+              Forgot Password?
+            </Link>
+          </div>
         </form>
 
         {/* DIVIDER */}

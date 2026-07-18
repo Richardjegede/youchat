@@ -6,7 +6,14 @@ import {
   createUserWithEmailAndPassword,
   sendEmailVerification,
 } from "firebase/auth";
-import { doc, setDoc } from "firebase/firestore";
+import {
+  collection,
+  query,
+  where,
+  getDocs,
+  doc,
+  setDoc,
+} from "firebase/firestore";
 import { auth, db } from "../lib/firebase";
 import Link from "next/link";
 
@@ -14,7 +21,6 @@ export default function Register() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const [success, setSuccess] = useState("");
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -22,6 +28,8 @@ export default function Register() {
   const [formData, setFormData] = useState({
     fullName: "",
     email: "",
+    countryCode: "+234",
+    phoneNumber: "",
     studentId: "",
     password: "",
     confirmPassword: "",
@@ -29,14 +37,12 @@ export default function Register() {
 
   const handleChange = (e) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
-    setError(""); // Clear errors when user types
-    setSuccess("");
+    setError("");
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
-    setSuccess("");
 
     // 1. Validate passwords match
     if (formData.password !== formData.confirmPassword) {
@@ -44,10 +50,45 @@ export default function Register() {
       return;
     }
 
+    // 2. Basic password strength check
+    if (formData.password.length < 6) {
+      setError("Password must be at least 6 characters.");
+      return;
+    }
+
     setLoading(true);
 
     try {
-      // 2. Create the user in Firebase Authentication
+      // 3. CHECK FOR DUPLICATE ACCOUNTS (Student ID or Phone)
+      const usersRef = collection(db, "users");
+
+      // Check Student ID
+      const studentIdQuery = query(
+        usersRef,
+        where("studentId", "==", formData.studentId),
+      );
+      const studentIdSnapshot = await getDocs(studentIdQuery);
+      if (!studentIdSnapshot.empty) {
+        setError(
+          "This Student ID is already registered. Please log in or use 'Forgot Password'.",
+        );
+        setLoading(false);
+        return;
+      }
+
+      // Check Phone Number
+      const phoneQuery = query(
+        usersRef,
+        where("phoneNumber", "==", formData.phoneNumber),
+      );
+      const phoneSnapshot = await getDocs(phoneQuery);
+      if (!phoneSnapshot.empty) {
+        setError("This Phone Number is already registered.");
+        setLoading(false);
+        return;
+      }
+
+      // 4. Create the user in Firebase Authentication
       const userCredential = await createUserWithEmailAndPassword(
         auth,
         formData.email,
@@ -55,33 +96,33 @@ export default function Register() {
       );
       const user = userCredential.user;
 
-      // 3. Send the verification email automatically
+      // 5. Send the verification email automatically
       await sendEmailVerification(user);
 
-      // 4. Save their extra details in Firestore Database
+      // 6. Save details in Firestore
       await setDoc(doc(db, "users", user.uid), {
         fullName: formData.fullName,
         email: formData.email,
+        phoneNumber: formData.phoneNumber,
         studentId: formData.studentId,
-        isVerified: false, // Will become true when they click the email link
+        isEmailVerified: false,
         createdAt: new Date().toISOString(),
+        followers: [],
+        following: [],
       });
 
-      // 5. Success! Show message and redirect to login
-      setSuccess(
-        "Account created! Please check your email to verify your account before logging in.",
-      );
-
-      setTimeout(() => {
-        router.push("/login");
-      }, 3000); // Redirect after 3 seconds
+      // 7. Success! Redirect them to login
+      router.push("/login");
     } catch (err) {
+      console.error("Signup error:", err);
       if (err.code === "auth/email-already-in-use") {
         setError("This email is already registered. Please log in.");
-      } else if (err.code === "auth/weak-password") {
-        setError("Password should be at least 6 characters.");
+      } else if (err.code === "auth/invalid-email") {
+        setError("Please enter a valid email address.");
       } else {
-        setError("Failed to create account. Please try again.");
+        setError(
+          "Failed to create account. Please check your details and try again.",
+        );
       }
     } finally {
       setLoading(false);
@@ -91,32 +132,22 @@ export default function Register() {
   return (
     <div className="min-h-screen bg-black text-white flex items-center justify-center px-4 py-20">
       <div className="w-full max-w-md bg-[#111] border border-gray-800 rounded-2xl p-8 shadow-2xl">
-        {/* HEADER */}
-        <div className="text-center mb-8">
+        <div className="text-center mb-6">
           <Link href="/" className="text-3xl font-bold">
-            You<span className="text-cyan-400">Buy</span>
+            You<span className="text-cyan-400">Chat</span>
           </Link>
           <h2 className="text-2xl font-bold mt-4">Create Your Account</h2>
           <p className="text-gray-400 text-sm mt-2">
-            Join your campus marketplace today.
+            Join the ultimate campus network.
           </p>
         </div>
 
-        {/* ERROR MESSAGE */}
         {error && (
-          <div className="bg-red-500/10 border border-red-500 text-red-500 p-3 rounded-lg mb-4 text-sm text-center">
+          <div className="bg-red-500/10 border border-red-500 text-red-400 p-3 rounded-lg mb-4 text-sm text-center">
             {error}
           </div>
         )}
 
-        {/* SUCCESS MESSAGE */}
-        {success && (
-          <div className="bg-green-500/10 border border-green-500 text-green-500 p-3 rounded-lg mb-4 text-sm text-center">
-            {success}
-          </div>
-        )}
-
-        {/* FORM */}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="block text-sm text-gray-400 mb-1">
@@ -148,6 +179,36 @@ export default function Register() {
 
           <div>
             <label className="block text-sm text-gray-400 mb-1">
+              Phone Number
+            </label>
+            <div className="flex gap-2">
+              <select
+                name="countryCode"
+                value={formData.countryCode}
+                onChange={handleChange}
+                className="bg-[#1a1a1a] border border-gray-700 rounded-lg px-3 py-3 text-white focus:outline-none focus:border-cyan-400 transition w-28"
+              >
+                <option value="+234">🇳🇬 +234</option>
+                <option value="+1">🇺🇸 +1</option>
+                <option value="+254">🇰🇪 +254</option>
+                <option value="+27">🇿🇦 +27</option>
+                <option value="+233">🇬🇭 +233</option>
+                <option value="+20">🇪🇬 +20</option>
+              </select>
+              <input
+                type="tel"
+                name="phoneNumber"
+                value={formData.phoneNumber}
+                onChange={handleChange}
+                placeholder="8012345678"
+                className="flex-1 bg-[#1a1a1a] border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-cyan-400 transition"
+                required
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">
               Student ID / Matric Number
             </label>
             <input
@@ -160,7 +221,6 @@ export default function Register() {
             />
           </div>
 
-          {/* PASSWORD FIELD WITH EYE ICON */}
           <div className="relative">
             <label className="block text-sm text-gray-400 mb-1">Password</label>
             <input
@@ -177,7 +237,6 @@ export default function Register() {
               className="absolute right-3 top-9 text-gray-400 hover:text-white"
             >
               {showPassword ? (
-                // Eye Off Icon
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   width="20"
@@ -193,7 +252,6 @@ export default function Register() {
                   <line x1="1" y1="1" x2="23" y2="23" />
                 </svg>
               ) : (
-                // Eye Icon
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   width="20"
@@ -212,7 +270,6 @@ export default function Register() {
             </button>
           </div>
 
-          {/* CONFIRM PASSWORD FIELD WITH EYE ICON */}
           <div className="relative">
             <label className="block text-sm text-gray-400 mb-1">
               Confirm Password
@@ -231,7 +288,6 @@ export default function Register() {
               className="absolute right-3 top-9 text-gray-400 hover:text-white"
             >
               {showConfirmPassword ? (
-                // Eye Off Icon
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   width="20"
@@ -247,7 +303,6 @@ export default function Register() {
                   <line x1="1" y1="1" x2="23" y2="23" />
                 </svg>
               ) : (
-                // Eye Icon
                 <svg
                   xmlns="http://www.w3.org/2000/svg"
                   width="20"
