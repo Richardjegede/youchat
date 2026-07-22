@@ -2,7 +2,13 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { collection, addDoc, serverTimestamp } from "firebase/firestore";
+import {
+  collection,
+  addDoc,
+  serverTimestamp,
+  doc,
+  getDoc,
+} from "firebase/firestore"; // 🔥 ADDED doc, getDoc
 import { auth, db } from "../lib/firebase";
 
 export default function Sell() {
@@ -73,7 +79,15 @@ export default function Sell() {
         }
       }
 
-      console.log("🔥 6. Sending data to Firestore...");
+      console.log("🔥 6. Fetching user verification status...");
+
+      // 🔥 MAGIC STEP: Check if the seller is verified
+      const userDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
+      const userData = userDoc.exists() ? userDoc.data() : {};
+      const isSellerVerified = userData.isVerified || false;
+      const sellerName = userData.fullName || "Anonymous";
+
+      console.log("🔥 7. Sending data to Firestore...");
 
       const docRef = await addDoc(collection(db, "products"), {
         title: formData.title,
@@ -85,10 +99,12 @@ export default function Sell() {
         sellerId: auth.currentUser.uid,
         sellerEmail: auth.currentUser.email,
         sellerPhone: formData.sellerPhone,
+        sellerName: sellerName, // 🔥 ADDED: So the feed knows the name
+        isSellerVerified: isSellerVerified, // 🔥 THE MAGIC LINE THAT TRIGGERS THE BLUE TICK!
         createdAt: serverTimestamp(),
       });
 
-      console.log("🎉 7. SUCCESS! Document written with ID:", docRef.id);
+      console.log("🎉 8. SUCCESS! Document written with ID:", docRef.id);
 
       // Auto-redirect to feed (No alert, just smooth transition!)
       router.push("/feed");
@@ -255,6 +271,7 @@ export default function Sell() {
               required
             ></textarea>
           </div>
+
           {/* PHONE NUMBER */}
           <div>
             <label className="block text-sm font-semibold text-gray-300 mb-2">
@@ -273,6 +290,7 @@ export default function Sell() {
               Buyers will contact you on this number
             </p>
           </div>
+
           {/* SUBMIT BUTTON */}
           <button
             type="submit"

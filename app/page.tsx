@@ -90,7 +90,7 @@ export default function Home() {
       const result = await res.json();
 
       // 🔥 FETCH REAL NAME INSTEAD OF EMAIL
-      let realName = auth.currentUser.email.split("@")[0];
+      let realName = auth.currentUser?.email?.split("@")[0] || "Creator";
       try {
         const userDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
         if (userDoc.exists() && userDoc.data().fullName) {
@@ -383,32 +383,9 @@ export default function Home() {
   );
 }
 
-// 🔥 THE ULTIMATE INTERACTIVE FEED ITEM (With Clickable Avatars!)
+// 🔥 THE ULTIMATE INTERACTIVE FEED ITEM (With Clickable Avatars & Blue Tick!)
 function FeedItem({ item, getTimeAgo }) {
-  // 🔔 NOTIFICATION HELPER FUNCTION
-  const sendNotification = async (recipientId, senderId, type, message) => {
-    if (recipientId === senderId) return;
-    try {
-      let senderName = "Someone";
-      const senderDoc = await getDoc(doc(db, "users", senderId));
-      if (senderDoc.exists() && senderDoc.data().fullName) {
-        senderName = senderDoc.data().fullName;
-      }
-
-      await addDoc(collection(db, "notifications"), {
-        userId: recipientId,
-        senderId: senderId,
-        senderName: senderName,
-        type: type,
-        message: message,
-        read: false,
-        createdAt: serverTimestamp(),
-      });
-    } catch (err) {
-      console.error("Notification error:", err);
-    }
-  };
-
+  // ... (keep all your existing state variables like liked, likeCount, etc.)
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(item.likes || 0);
   const [showComments, setShowComments] = useState(false);
@@ -418,7 +395,10 @@ function FeedItem({ item, getTimeAgo }) {
   const [isFollowing, setIsFollowing] = useState(false);
   const [replyingToIndex, setReplyingToIndex] = useState(null);
   const [replyText, setReplyText] = useState("");
+
+  // 🔥 NEW STATES FOR AUTHOR PROFILE
   const [authorAvatar, setAuthorAvatar] = useState(null);
+  const [isAuthorVerified, setIsAuthorVerified] = useState(false);
 
   // Check if user already liked this post
   useEffect(() => {
@@ -431,14 +411,16 @@ function FeedItem({ item, getTimeAgo }) {
     }
   }, [item.likedBy]);
 
-  // Fetch author's avatar
+  // 🔥 FETCH AUTHOR'S AVATAR AND VERIFICATION STATUS
   useEffect(() => {
     const fetchAuthorProfile = async () => {
       if (item.authorId) {
         try {
           const userDoc = await getDoc(doc(db, "users", item.authorId));
-          if (userDoc.exists() && userDoc.data().avatar) {
-            setAuthorAvatar(userDoc.data().avatar);
+          if (userDoc.exists()) {
+            const data = userDoc.data();
+            if (data.avatar) setAuthorAvatar(data.avatar);
+            if (data.isVerified) setIsAuthorVerified(true); // 🔥 MAGIC LINE
           }
         } catch (err) {
           console.error("Error fetching author profile:", err);
@@ -448,25 +430,28 @@ function FeedItem({ item, getTimeAgo }) {
     fetchAuthorProfile();
   }, [item.authorId]);
 
-  useEffect(() => {
-    const checkFollowStatus = async () => {
-      if (
-        auth.currentUser &&
-        item.authorId &&
-        item.authorId !== auth.currentUser.uid
-      ) {
-        const userDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
-        if (userDoc.exists()) {
-          const data = userDoc.data();
-          if (data.following && data.following.includes(item.authorId)) {
-            setIsFollowing(true);
-          }
-        }
-      }
-    };
-    checkFollowStatus();
-  }, [item.authorId]);
-
+  // ... (keep your existing handleFollow, handleLike, handleComment functions exactly as they are) ...
+  // 🔥 ADD THIS FUNCTION TO PREVENT CRASHES
+  const sendNotification = async (
+    targetUserId: string,
+    actorUid: string,
+    type: string,
+    message: string,
+  ) => {
+    if (!targetUserId || targetUserId === actorUid) return; // Don't notify yourself
+    try {
+      await addDoc(collection(db, "notifications"), {
+        userId: targetUserId,
+        actorUid: actorUid,
+        type: type, // "like", "comment", "follow", etc.
+        message: message,
+        read: false,
+        createdAt: serverTimestamp(),
+      });
+    } catch (err) {
+      console.error("Error sending notification:", err);
+    }
+  };
   const handleFollow = async () => {
     if (!auth.currentUser || !item.authorId) return;
     const currentUid = auth.currentUser.uid;
@@ -727,9 +712,26 @@ function FeedItem({ item, getTimeAgo }) {
         </Link>
 
         <div className="flex-1">
-          <p className="font-semibold text-sm text-white">
-            {item.authorName || "Anonymous"}
-          </p>
+          {/* 🔥 NAME + CELEBRITY BLUE TICK */}
+          <div className="flex items-center gap-1.5">
+            <p className="font-semibold text-sm text-white">
+              {item.authorName || "Anonymous"}
+            </p>
+            {isAuthorVerified && (
+              <svg
+                className="w-4 h-4 text-cyan-400"
+                fill="currentColor"
+                viewBox="0 0 20 20"
+                title="Verified Creator"
+              >
+                <path
+                  fillRule="evenodd"
+                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            )}
+          </div>
           <p className="text-gray-500 text-xs">{getTimeAgo(item.createdAt)}</p>
         </div>
 
@@ -910,12 +912,16 @@ function PostModal({ onClose, onSuccess }) {
     e.preventDefault();
     setLoading(true);
     try {
-      // Fetch user's real name
       let authorName = auth.currentUser?.email?.split("@")[0] || "Anonymous";
+      let isVerified = false; // 🔥 DEFAULT TO FALSE
+
       if (auth.currentUser) {
         const userDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
-        if (userDoc.exists() && userDoc.data().fullName) {
-          authorName = userDoc.data().fullName;
+        if (userDoc.exists()) {
+          if (userDoc.data().fullName) {
+            authorName = userDoc.data().fullName;
+          }
+          isVerified = userDoc.data().isVerified || false; // 🔥 GET VERIFICATION STATUS
         }
       }
 
@@ -938,6 +944,7 @@ function PostModal({ onClose, onSuccess }) {
         videoLocation,
         authorId: auth.currentUser?.uid,
         authorName: authorName,
+        isAuthorVerified: isVerified, // 🔥 SAVE IT TO THE POST!
         createdAt: serverTimestamp(),
         likes: 0,
         commentsList: [],

@@ -20,7 +20,7 @@ export default function Feed() {
   const router = useRouter();
   const [products, setProducts] = useState<any[]>([]);
   const [filteredProducts, setFilteredProducts] = useState<any[]>([]);
-  const [favorites, setFavorites] = useState(new Set()); // Stores IDs of liked items
+  const [favorites, setFavorites] = useState(new Set());
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("All");
@@ -93,7 +93,7 @@ export default function Feed() {
     e: React.MouseEvent,
     productId: string,
   ) => {
-    e.preventDefault(); // Prevents the Link from clicking through
+    e.preventDefault();
     e.stopPropagation();
 
     if (!auth.currentUser) {
@@ -109,13 +109,11 @@ export default function Feed() {
 
     try {
       if (favorites.has(productId)) {
-        // Unlike
         await deleteDoc(favDocRef);
         const newFavs = new Set(favorites);
         newFavs.delete(productId);
         setFavorites(newFavs);
       } else {
-        // Like
         await setDoc(favDocRef, {
           userId: auth.currentUser.uid,
           productId: productId,
@@ -230,11 +228,29 @@ export default function Feed() {
                   <p className="text-cyan-400 font-bold text-xl mb-3">
                     ₦{Number(product.price).toLocaleString()}
                   </p>
+
+                  {/* 🔥 DYNAMIC VERIFIED BADGE (REPLACES HARDCODED TEXT) */}
                   <div className="flex items-center justify-between text-sm text-gray-400 border-t border-gray-800 pt-3">
-                    <span>{product.campus}</span>
-                    <span className="text-green-400 text-xs font-medium">
-                      Verified
-                    </span>
+                    <span>{product.campus || "Campus"}</span>
+
+                    {product.isSellerVerified ? (
+                      <div className="flex items-center gap-1 text-cyan-400 font-medium text-xs">
+                        <svg
+                          className="w-4 h-4"
+                          fill="currentColor"
+                          viewBox="0 0 20 20"
+                        >
+                          <path
+                            fillRule="evenodd"
+                            d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                            clipRule="evenodd"
+                          />
+                        </svg>
+                        <span>Verified</span>
+                      </div>
+                    ) : (
+                      <span className="text-gray-600 text-xs">Student</span>
+                    )}
                   </div>
                 </div>
               </div>
