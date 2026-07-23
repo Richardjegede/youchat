@@ -14,7 +14,7 @@ import {
   serverTimestamp,
   getDoc,
 } from "firebase/firestore";
-import { db, auth } from "../lib/firebase"; // 🔥 FIXED: Added 'db' back!
+import { db, auth } from "../lib/firebase";
 import { onAuthStateChanged } from "firebase/auth";
 import Link from "next/link";
 import ProtectedRoute from "../components/ProtectedRoute";
@@ -34,25 +34,35 @@ export default function Notifications() {
           orderBy("createdAt", "desc"),
         );
 
-        const unsubscribe = onSnapshot(
-          q,
-          (snapshot) => {
-            const notifs = snapshot.docs.map((doc) => ({
-              id: doc.id,
-              ...doc.data(),
-            }));
-            setNotifications(notifs);
-            setLoading(false); // 🔥 THIS WILL NOW FIRE SUCCESSFULLY
-          },
-          (error) => {
-            console.error("Notification fetch error:", error);
-            setLoading(false); // 🔥 SAFETY NET: Stop loading even if there's an error
-          },
-        );
+        // 🔥 FIXED: Added 'q' as the first argument!
+        const unsubscribe = onSnapshot(q, async (snapshot) => {
+          let notifs = snapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          }));
+
+          // Look up real names for notifications that only have an ID
+          for (let notif of notifs) {
+            if (!notif.actorName && notif.actorUid) {
+              try {
+                const userDoc = await getDoc(doc(db, "users", notif.actorUid));
+                if (userDoc.exists()) {
+                  const data = userDoc.data();
+                  notif.actorName = data.fullName || data.username || "User";
+                }
+              } catch (err) {
+                console.error("Error fetching user name:", err);
+              }
+            }
+          }
+
+          setNotifications(notifs);
+          setLoading(false);
+        });
 
         return () => unsubscribe();
       } else {
-        setLoading(false); // 🔥 SAFETY NET: Stop loading if no user
+        setLoading(false);
       }
     });
 
@@ -167,9 +177,20 @@ export default function Notifications() {
                   <div className="text-2xl">{getIcon(notif.type)}</div>
                   <div className="flex-1">
                     <p className="text-white text-sm">
-                      <span className="font-semibold text-cyan-400">
-                        {notif.actorName || "Someone"}
-                      </span>{" "}
+                      {notif.actorUid ? (
+                        <Link
+                          href={`/user/${notif.actorUid}`}
+                          onClick={(e) => e.stopPropagation()}
+                          className="font-semibold text-cyan-400 hover:underline mr-1"
+                        >
+                          {notif.actorName || "Someone"}
+                        </Link>
+                      ) : (
+                        <span className="font-semibold text-cyan-400 mr-1">
+                          {notif.actorName || "Someone"}
+                        </span>
+                      )}
+
                       {notif.message || "You have a new notification"}
                     </p>
                     <p className="text-gray-500 text-xs mt-1">
