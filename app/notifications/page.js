@@ -13,9 +13,9 @@ import {
   setDoc,
   serverTimestamp,
   getDoc,
-  onAuthStateChanged, // 🔥 ADDED
 } from "firebase/firestore";
-import { db, auth } from "../lib/firebase";
+import { auth } from "../lib/firebase";
+import { onAuthStateChanged } from "firebase/auth"; // 🔥 FIXED: Moved to firebase/auth
 import Link from "next/link";
 import ProtectedRoute from "../components/ProtectedRoute";
 
@@ -25,7 +25,6 @@ export default function Notifications() {
   const [accepting, setAccepting] = useState(null);
   const [declining, setDeclining] = useState(null);
 
-  // 🔥 FIXED: Use onAuthStateChanged to prevent infinite loading
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
       if (currentUser) {
@@ -41,12 +40,12 @@ export default function Notifications() {
             ...doc.data(),
           }));
           setNotifications(notifs);
-          setLoading(false); // 🔥 NOW IT WILL ACTUALLY STOP LOADING
+          setLoading(false);
         });
 
         return () => unsubscribe();
       } else {
-        setLoading(false); // 🔥 Prevents infinite spin if user logs out
+        setLoading(false);
       }
     });
 
