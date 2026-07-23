@@ -14,8 +14,8 @@ import {
   serverTimestamp,
   getDoc,
 } from "firebase/firestore";
-import { auth } from "../lib/firebase";
-import { onAuthStateChanged } from "firebase/auth"; // 🔥 FIXED: Moved to firebase/auth
+import { db, auth } from "../lib/firebase"; // 🔥 FIXED: Added 'db' back!
+import { onAuthStateChanged } from "firebase/auth";
 import Link from "next/link";
 import ProtectedRoute from "../components/ProtectedRoute";
 
@@ -34,18 +34,25 @@ export default function Notifications() {
           orderBy("createdAt", "desc"),
         );
 
-        const unsubscribe = onSnapshot(q, (snapshot) => {
-          const notifs = snapshot.docs.map((doc) => ({
-            id: doc.id,
-            ...doc.data(),
-          }));
-          setNotifications(notifs);
-          setLoading(false);
-        });
+        const unsubscribe = onSnapshot(
+          q,
+          (snapshot) => {
+            const notifs = snapshot.docs.map((doc) => ({
+              id: doc.id,
+              ...doc.data(),
+            }));
+            setNotifications(notifs);
+            setLoading(false); // 🔥 THIS WILL NOW FIRE SUCCESSFULLY
+          },
+          (error) => {
+            console.error("Notification fetch error:", error);
+            setLoading(false); // 🔥 SAFETY NET: Stop loading even if there's an error
+          },
+        );
 
         return () => unsubscribe();
       } else {
-        setLoading(false);
+        setLoading(false); // 🔥 SAFETY NET: Stop loading if no user
       }
     });
 
