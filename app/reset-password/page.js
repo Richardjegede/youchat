@@ -1,13 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { useSearchParams } from "next/navigation";
+import { useState, useEffect, Suspense } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
 import { confirmPasswordReset, verifyPasswordResetCode } from "firebase/auth";
 import { auth } from "../lib/firebase";
-import { useRouter } from "next/navigation";
 import Link from "next/link";
 
-export default function ResetPassword() {
+// 🔥 1. The inner component that uses searchParams
+function ResetPasswordForm() {
   const searchParams = useSearchParams();
   const router = useRouter();
 
@@ -20,15 +20,16 @@ export default function ResetPassword() {
   const [verified, setVerified] = useState(false);
 
   useEffect(() => {
-    const code = searchParams.get("oobCode");
+    // 🔥 Safely get the code (prevents null errors during build)
+    const code = searchParams ? searchParams.get("oobCode") : null;
+
     if (code) {
       setOobCode(code);
-      // Verify the code is valid immediately
       verifyPasswordResetCode(auth, code)
-        .then((email) => {
+        .then(() => {
           setVerified(true);
         })
-        .catch((err) => {
+        .catch(() => {
           setError(
             "This reset link is invalid or has expired. Please request a new one.",
           );
@@ -151,5 +152,20 @@ export default function ResetPassword() {
         </div>
       </div>
     </div>
+  );
+}
+
+// 🔥 2. The main export wrapped in Suspense to prevent Next.js build crashes
+export default function ResetPasswordPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-black flex items-center justify-center text-white">
+          <div className="w-10 h-10 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"></div>
+        </div>
+      }
+    >
+      <ResetPasswordForm />
+    </Suspense>
   );
 }
