@@ -13,7 +13,7 @@ import {
   setDoc,
   serverTimestamp,
   getDoc,
-  getDocs,
+  onAuthStateChanged, // 🔥 ADDED
 } from "firebase/firestore";
 import { db, auth } from "../lib/firebase";
 import Link from "next/link";
@@ -22,30 +22,35 @@ import ProtectedRoute from "../components/ProtectedRoute";
 export default function Notifications() {
   const [notifications, setNotifications] = useState([]);
   const [loading, setLoading] = useState(true);
-
-  // ✅ FIXED: Removed TypeScript types for .js file
   const [accepting, setAccepting] = useState(null);
   const [declining, setDeclining] = useState(null);
 
+  // 🔥 FIXED: Use onAuthStateChanged to prevent infinite loading
   useEffect(() => {
-    if (!auth.currentUser) return;
+    const unsubscribeAuth = onAuthStateChanged(auth, (currentUser) => {
+      if (currentUser) {
+        const q = query(
+          collection(db, "notifications"),
+          where("userId", "==", currentUser.uid),
+          orderBy("createdAt", "desc"),
+        );
 
-    const q = query(
-      collection(db, "notifications"),
-      where("userId", "==", auth.currentUser.uid),
-      orderBy("createdAt", "desc"),
-    );
+        const unsubscribe = onSnapshot(q, (snapshot) => {
+          const notifs = snapshot.docs.map((doc) => ({
+            id: doc.id,
+            ...doc.data(),
+          }));
+          setNotifications(notifs);
+          setLoading(false); // 🔥 NOW IT WILL ACTUALLY STOP LOADING
+        });
 
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const notifs = snapshot.docs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-      }));
-      setNotifications(notifs);
-      setLoading(false);
+        return () => unsubscribe();
+      } else {
+        setLoading(false); // 🔥 Prevents infinite spin if user logs out
+      }
     });
 
-    return () => unsubscribe();
+    return () => unsubscribeAuth();
   }, []);
 
   const markAsRead = async (id) => {
@@ -56,11 +61,9 @@ export default function Notifications() {
     }
   };
 
-  // 🔥 ACCEPT JOIN REQUEST
   const handleAccept = async (notif) => {
     setAccepting(notif.id);
     try {
-      // Add user as member
       await setDoc(
         doc(db, "groups", notif.groupId, "members", notif.actorUid),
         {
@@ -71,7 +74,6 @@ export default function Notifications() {
         },
       );
 
-      // Update group member count
       const groupRef = doc(db, "groups", notif.groupId);
       const groupDoc = await getDoc(groupRef);
       if (groupDoc.exists()) {
@@ -80,7 +82,6 @@ export default function Notifications() {
         });
       }
 
-      // Delete notification
       await deleteDoc(doc(db, "notifications", notif.id));
     } catch (err) {
       console.error("Error accepting request:", err);
@@ -90,7 +91,6 @@ export default function Notifications() {
     }
   };
 
-  // 🔥 DECLINE JOIN REQUEST
   const handleDecline = async (notif) => {
     setDeclining(notif.id);
     try {
@@ -167,14 +167,15 @@ export default function Notifications() {
                       {notif.message || "You have a new notification"}
                     </p>
                     <p className="text-gray-500 text-xs mt-1">
-                      {notif.createdAt?.toDate().toLocaleString()}
+                      {notif.createdAt?.toDate
+                        ? notif.createdAt.toDate().toLocaleString()
+                        : "Just now"}
                     </p>
                   </div>
                   {!notif.read && (
                     <div className="w-2 h-2 rounded-full bg-cyan-500 mt-2"></div>
                   )}
 
-                  {/* 🔥 ACCEPT/DECLINE BUTTONS FOR GROUP REQUESTS */}
                   {notif.type === "group_join_request" && (
                     <div className="flex flex-col gap-2 mt-2">
                       <button

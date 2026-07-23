@@ -162,19 +162,26 @@ export default function GroupPage() {
         joinedAt: serverTimestamp(),
         notificationsEnabled: true,
       });
-      if (group.privacy === "private") {
+      // 🔥 NOTIFY ADMIN FOR BOTH PRIVATE AND SECRET GROUPS
+      if (group.privacy === "private" || group.privacy === "secret") {
         const userDoc = await getDoc(doc(db, "users", user.uid));
-        const userName = userDoc.exists()
-          ? userDoc.data().fullName || user.email?.split("@")[0]
-          : user.email?.split("@")[0];
+        const userData = userDoc.exists() ? userDoc.data() : {};
+
+        // 🔥 GRAB THE REAL NAME SAFELY
+        const actorName =
+          userData.fullName ||
+          userData.username ||
+          user.email?.split("@")[0] ||
+          "Someone";
+
         await addDoc(collection(db, "notifications"), {
           userId: group.createdBy,
           actorUid: user.uid,
-          actorName: userName,
+          actorName: actorName, // 🔥 THIS IS WHAT THE NOTIFICATIONS PAGE READS
           type: "group_join_request",
           groupId: group.id,
           groupName: group.name,
-          message: `${userName} wants to join ${group.name}`,
+          message: `${actorName} wants to join ${group.name}`,
           read: false,
           createdAt: serverTimestamp(),
         });
