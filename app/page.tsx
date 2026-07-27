@@ -20,28 +20,34 @@ import { db, auth } from "./lib/firebase";
 import Link from "next/link";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { onSnapshot } from "firebase/firestore";
+import GiftSelectorModal from "./components/GiftSelectorModal";
 import StoryViewer from "./components/StoryViewer";
 
 export default function Home() {
   const [feedItems, setFeedItems] = useState<any[]>([]);
   const [activeTab, setActiveTab] = useState("all");
   const [loading, setLoading] = useState(true);
+  const [showGiftModal, setShowGiftModal] = useState(false);
+  const [selectedRecipient, setSelectedRecipient] = useState({
+    id: "",
+    name: "",
+  });
   const [showPostModal, setShowPostModal] = useState(false);
-  // 🔥 STORIES STATES
+
   const [stories, setStories] = useState([]);
   const [showStoryViewer, setShowStoryViewer] = useState(false);
   const [currentStoryIndex, setCurrentStoryIndex] = useState(0);
   const [showCreateStory, setShowCreateStory] = useState(false);
-  const [storyFile, setStoryFile] = useState(null);
+  const [storyFile, setStoryFile] = useState<any>(null);
   const [uploadingStory, setUploadingStory] = useState(false);
 
   const tabs = [
-    { id: "all", label: "All" },
-    { id: "product", label: "Market" },
-    { id: "social", label: "Social" },
-    { id: "video", label: "Videos" },
-    { id: "event", label: "Events" },
-    { id: "job", label: "Jobs" },
+    { id: "feed", label: "Feed", icon: "🏠", href: "/" },
+    { id: "messages", label: "Messages", icon: "💬", href: "/messages" },
+    { id: "groups", label: "Groups", icon: "👥", href: "/groups" },
+    { id: "market", label: "YouBuy", icon: "🛒", href: "/feed" },
+    { id: "services", label: "Services", icon: "🛠️", href: "/services" },
+    { id: "earn", label: "Earn", icon: "💰", href: "/analytics" },
   ];
 
   useEffect(() => {
@@ -67,8 +73,8 @@ export default function Home() {
       setLoading(false);
     }
   };
-  // 🔥 UPLOAD STORY TO CLOUDINARY
-  const uploadStory = async (e) => {
+
+  const uploadStory = async (e: any) => {
     e.preventDefault();
     if (!storyFile) return;
     setUploadingStory(true);
@@ -82,27 +88,22 @@ export default function Home() {
     try {
       const res = await fetch(
         `https://api.cloudinary.com/v1_1/qxd9ghri/${resourceType}/upload`,
-        {
-          method: "POST",
-          body: data,
-        },
+        { method: "POST", body: data },
       );
       const result = await res.json();
 
-      // 🔥 FETCH REAL NAME INSTEAD OF EMAIL
       let realName = auth.currentUser?.email?.split("@")[0] || "Creator";
       try {
         const userDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
-        if (userDoc.exists() && userDoc.data().fullName) {
+        if (userDoc.exists() && userDoc.data().fullName)
           realName = userDoc.data().fullName;
-        }
       } catch (err) {
         console.error(err);
       }
 
       await addDoc(collection(db, "stories"), {
         userId: auth.currentUser.uid,
-        userName: realName, // ✅ REAL NAME!
+        userName: realName,
         userAvatar: null,
         mediaUrl: result.secure_url,
         mediaType: resourceType,
@@ -121,10 +122,8 @@ export default function Home() {
     }
   };
 
-  // 🔥 FETCH ACTIVE STORIES (24 Hours)
   useEffect(() => {
     const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-
     const q = query(
       collection(db, "stories"),
       where("expiresAt", ">", twentyFourHoursAgo),
@@ -136,9 +135,7 @@ export default function Home() {
         id: doc.id,
         ...doc.data(),
       }));
-
-      // 🔥 GROUP STORIES BY USER
-      const grouped = {};
+      const grouped: any = {};
       activeStories.forEach((story) => {
         if (!grouped[story.userId]) {
           grouped[story.userId] = {
@@ -151,10 +148,9 @@ export default function Home() {
         grouped[story.userId].stories.push(story);
       });
 
-      // Sort stories inside each group by date (oldest first)
-      Object.values(grouped).forEach((group) => {
+      Object.values(grouped).forEach((group: any) => {
         group.stories.sort(
-          (a, b) => a.createdAt?.toDate() - b.createdAt?.toDate(),
+          (a: any, b: any) => a.createdAt?.toDate() - b.createdAt?.toDate(),
         );
       });
 
@@ -164,9 +160,11 @@ export default function Home() {
     return () => unsubscribe();
   }, []);
 
-  const getTimeAgo = (timestamp) => {
+  const getTimeAgo = (timestamp: any) => {
     if (!timestamp) return "Just now";
-    const seconds = Math.floor((new Date() - timestamp.toDate()) / 1000);
+    const seconds = Math.floor(
+      (new Date().getTime() - timestamp.toDate().getTime()) / 1000,
+    );
     if (seconds < 60) return "Just now";
     const minutes = Math.floor(seconds / 60);
     if (minutes < 60) return `${minutes}m ago`;
@@ -178,10 +176,9 @@ export default function Home() {
   return (
     <ProtectedRoute>
       <div className="min-h-screen bg-[#0a0a0a] text-white pb-24 pt-20">
-        {/* 🔥 STORIES BAR - PASTED RIGHT HERE! */}
+        {/* STORIES BAR */}
         <div className="sticky top-16 z-30 bg-[#0a0a0a]/90 backdrop-blur-md border-b border-gray-800/50 py-4 overflow-x-auto scrollbar-hide">
           <div className="max-w-2xl mx-auto px-4 flex gap-4">
-            {/* Add Story Button */}
             <div
               className="flex flex-col items-center gap-1 cursor-pointer"
               onClick={() => setShowCreateStory(true)}
@@ -192,15 +189,12 @@ export default function Home() {
               <span className="text-xs text-gray-400">Your Story</span>
             </div>
 
-            {/* Other Users' Stories (Grouped with Broken Circle) */}
-            {stories.map((group, index) => {
+            {stories.map((group: any, index) => {
               const myUid = auth.currentUser?.uid;
               const hasUnviewed = group.stories.some(
-                (s) => !s.viewers?.includes(myUid),
+                (s: any) => !s.viewers?.includes(myUid),
               );
               const storyCount = group.stories.length;
-
-              // Get the latest story for the thumbnail
               const latestStory = group.stories[storyCount - 1];
               const isVideo = latestStory.mediaType === "video";
 
@@ -213,12 +207,10 @@ export default function Home() {
                     setShowStoryViewer(true);
                   }}
                 >
-                  {/* Ring Container */}
                   <div
                     className={`relative w-16 h-16 rounded-full p-[2px] ${hasUnviewed ? "bg-gradient-to-tr from-cyan-500 to-blue-600" : "bg-gray-600"}`}
                   >
                     <div className="w-full h-full rounded-full bg-[#0a0a0a] p-[2px] overflow-hidden relative">
-                      {/* THUMBNAIL */}
                       {!isVideo && latestStory.mediaUrl ? (
                         <img
                           src={latestStory.mediaUrl}
@@ -234,15 +226,11 @@ export default function Home() {
                           {group.userName?.charAt(0).toUpperCase()}
                         </div>
                       )}
-
-                      {/* VIDEO ICON OVERLAY */}
                       {isVideo && (
                         <div className="absolute inset-0 flex items-center justify-center bg-black/30">
                           <span className="text-white text-xs">▶</span>
                         </div>
                       )}
-
-                      {/* 🔥 BROKEN CIRCLE INDICATOR (Count Badge) */}
                       {storyCount > 1 && (
                         <div className="absolute bottom-0 right-0 bg-cyan-500 text-black text-[10px] font-bold w-5 h-5 flex items-center justify-center rounded-full border-2 border-[#0a0a0a]">
                           {storyCount}
@@ -250,7 +238,6 @@ export default function Home() {
                       )}
                     </div>
                   </div>
-
                   <span
                     className={`text-xs truncate w-16 text-center ${hasUnviewed ? "text-white font-semibold" : "text-gray-500"}`}
                   >
@@ -262,22 +249,36 @@ export default function Home() {
           </div>
         </div>
 
-        {/* YOUR EXISTING TABS SECTION (UNCHANGED) */}
         <div className="sticky top-40 z-30 bg-[#0a0a0a]/90 backdrop-blur-md border-b border-gray-800/50 overflow-x-auto scrollbar-hide">
           <div className="max-w-2xl mx-auto flex gap-2 px-4 py-3">
             {tabs.map((tab) => (
-              <button
+              <Link
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`px-5 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all ${activeTab === tab.id ? "bg-white text-black scale-105" : "bg-[#1a1a1a] text-gray-400 hover:bg-[#222]"}`}
+                href={
+                  tab.id === "feed"
+                    ? "/"
+                    : tab.id === "messages"
+                      ? "/messages"
+                      : tab.id === "groups"
+                        ? "/groups"
+                        : tab.id === "market"
+                          ? "/feed"
+                          : tab.id === "services"
+                            ? "/services"
+                            : tab.id === "earn"
+                              ? "/analytics"
+                              : "/"
+                }
+                className={`px-5 py-2 rounded-full text-sm font-semibold whitespace-nowrap transition-all flex items-center gap-2 ${activeTab === tab.id ? "bg-white text-black scale-105" : "bg-[#1a1a1a] text-gray-400 hover:bg-[#222]"}`}
               >
-                {tab.label}
-              </button>
+                <span>{tab.icon}</span>
+                <span>{tab.label}</span>
+              </Link>
             ))}
           </div>
         </div>
 
-        {/* FEED CONTENT (UNCHANGED) */}
+        {/* FEED CONTENT */}
         <div className="max-w-2xl mx-auto px-4 py-6 space-y-6">
           {loading ? (
             <div className="text-center py-20">
@@ -295,12 +296,25 @@ export default function Home() {
             </div>
           ) : (
             feedItems.map((item) => (
-              <FeedItem key={item.id} item={item} getTimeAgo={getTimeAgo} />
+              <FeedItem
+                key={item.id}
+                item={item}
+                getTimeAgo={getTimeAgo}
+                onGiftClick={(authorId, authorName, postId) => {
+                  // 🔥 Added postId
+                  setSelectedRecipient({
+                    id: authorId,
+                    name: authorName,
+                    postId: postId,
+                  });
+                  setShowGiftModal(true);
+                }}
+              />
             ))
           )}
         </div>
 
-        {/* FAB BUTTON (UNCHANGED) */}
+        {/* FAB BUTTON */}
         <button
           onClick={() => setShowPostModal(true)}
           className="fixed bottom-6 right-6 w-14 h-14 bg-cyan-500 hover:bg-cyan-400 text-black rounded-full shadow-2xl flex items-center justify-center text-3xl font-bold transition transform hover:scale-110 active:scale-95 z-40"
@@ -308,7 +322,7 @@ export default function Home() {
           +
         </button>
 
-        {/* 🔥 STORY VIEWER MODAL (Passes the whole group) */}
+        {/* STORY VIEWER MODAL */}
         {showStoryViewer && stories[currentStoryIndex] && (
           <StoryViewer
             storiesGroup={stories[currentStoryIndex]}
@@ -316,7 +330,7 @@ export default function Home() {
           />
         )}
 
-        {/* 🔥 CREATE STORY MODAL - ADDED HERE */}
+        {/* CREATE STORY MODAL */}
         {showCreateStory && (
           <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
             <div className="bg-[#151515] border border-gray-800 rounded-2xl p-6 max-w-md w-full">
@@ -328,7 +342,7 @@ export default function Home() {
                   <input
                     type="file"
                     accept="image/*,video/*"
-                    onChange={(e) => setStoryFile(e.target.files[0])}
+                    onChange={(e) => setStoryFile(e.target.files?.[0] || null)}
                     className="hidden"
                     id="story-upload"
                   />
@@ -371,21 +385,31 @@ export default function Home() {
           </div>
         )}
 
-        {/* POST MODAL (UNCHANGED) */}
+        {/* POST MODAL */}
         {showPostModal && (
           <PostModal
             onClose={() => setShowPostModal(false)}
             onSuccess={fetchFeed}
           />
         )}
+
+        {/* GIFT SELECTOR MODAL */}
+        <GiftSelectorModal
+          isOpen={showGiftModal}
+          onClose={() => setShowGiftModal(false)}
+          recipientId={selectedRecipient.id}
+          recipientName={selectedRecipient.name}
+          postId={selectedRecipient.postId} // 🔥 THIS WAS MISSING!
+        />
       </div>
     </ProtectedRoute>
   );
 }
 
-// 🔥 THE ULTIMATE INTERACTIVE FEED ITEM (With Clickable Avatars & Blue Tick!)
-function FeedItem({ item, getTimeAgo }) {
-  // ... (keep all your existing state variables like liked, likeCount, etc.)
+// =================================================================
+// 🔥 FEED ITEM COMPONENT
+// =================================================================
+function FeedItem({ item, getTimeAgo, onGiftClick }: any) {
   const [liked, setLiked] = useState(false);
   const [likeCount, setLikeCount] = useState(item.likes || 0);
   const [showComments, setShowComments] = useState(false);
@@ -393,25 +417,32 @@ function FeedItem({ item, getTimeAgo }) {
   const [comments, setComments] = useState(item.commentsList || []);
   const [toast, setToast] = useState("");
   const [isFollowing, setIsFollowing] = useState(false);
-  const [replyingToIndex, setReplyingToIndex] = useState(null);
+  const [replyingToIndex, setReplyingToIndex] = useState<number | null>(null);
   const [replyText, setReplyText] = useState("");
-
-  // 🔥 NEW STATES FOR AUTHOR PROFILE
-  const [authorAvatar, setAuthorAvatar] = useState(null);
+  const [authorAvatar, setAuthorAvatar] = useState<string | null>(null);
   const [isAuthorVerified, setIsAuthorVerified] = useState(false);
 
-  // Check if user already liked this post
+  // 🔥 FIX: Read gift count directly from the POST item!
+  const totalGiftsReceived = item.giftCount || 0;
+
   useEffect(() => {
     if (
       item.likedBy &&
       auth.currentUser &&
       item.likedBy.includes(auth.currentUser.uid)
-    ) {
+    )
       setLiked(true);
-    }
   }, [item.likedBy]);
 
-  // 🔥 FETCH AUTHOR'S AVATAR AND VERIFICATION STATUS
+  useEffect(() => {
+    if (
+      item.likedBy &&
+      auth.currentUser &&
+      item.likedBy.includes(auth.currentUser.uid)
+    )
+      setLiked(true);
+  }, [item.likedBy]);
+
   useEffect(() => {
     const fetchAuthorProfile = async () => {
       if (item.authorId) {
@@ -420,7 +451,7 @@ function FeedItem({ item, getTimeAgo }) {
           if (userDoc.exists()) {
             const data = userDoc.data();
             if (data.avatar) setAuthorAvatar(data.avatar);
-            if (data.isVerified) setIsAuthorVerified(true); // 🔥 MAGIC LINE
+            if (data.isVerified) setIsAuthorVerified(true);
           }
         } catch (err) {
           console.error("Error fetching author profile:", err);
@@ -429,22 +460,19 @@ function FeedItem({ item, getTimeAgo }) {
     };
     fetchAuthorProfile();
   }, [item.authorId]);
-
-  // ... (keep your existing handleFollow, handleLike, handleComment functions exactly as they are) ...
-  // 🔥 ADD THIS FUNCTION TO PREVENT CRASHES
   const sendNotification = async (
     targetUserId: string,
     actorUid: string,
     type: string,
     message: string,
   ) => {
-    if (!targetUserId || targetUserId === actorUid) return; // Don't notify yourself
+    if (!targetUserId || targetUserId === actorUid) return;
     try {
       await addDoc(collection(db, "notifications"), {
         userId: targetUserId,
-        actorUid: actorUid,
-        type: type, // "like", "comment", "follow", etc.
-        message: message,
+        actorUid,
+        type,
+        message,
         read: false,
         createdAt: serverTimestamp(),
       });
@@ -452,11 +480,11 @@ function FeedItem({ item, getTimeAgo }) {
       console.error("Error sending notification:", err);
     }
   };
+
   const handleFollow = async () => {
     if (!auth.currentUser || !item.authorId) return;
     const currentUid = auth.currentUser.uid;
     const authorUid = item.authorId;
-
     try {
       if (isFollowing) {
         await updateDoc(doc(db, "users", currentUid), {
@@ -491,7 +519,6 @@ function FeedItem({ item, getTimeAgo }) {
     setLiked(newLiked);
     const newCount = newLiked ? likeCount + 1 : likeCount - 1;
     setLikeCount(newCount);
-
     if (newLiked) {
       await updateDoc(doc(db, "feed", item.id), {
         likes: newCount,
@@ -511,18 +538,15 @@ function FeedItem({ item, getTimeAgo }) {
     }
   };
 
-  const handleComment = async (e) => {
+  const handleComment = async (e: any) => {
     e.preventDefault();
     if (!commentText.trim()) return;
-
     let authorName = auth.currentUser?.email?.split("@")[0] || "You";
     if (auth.currentUser) {
       const userDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
-      if (userDoc.exists() && userDoc.data().fullName) {
+      if (userDoc.exists() && userDoc.data().fullName)
         authorName = userDoc.data().fullName;
-      }
     }
-
     const newComment = {
       text: commentText,
       author: authorName,
@@ -534,8 +558,6 @@ function FeedItem({ item, getTimeAgo }) {
     setComments(newComments);
     setCommentText("");
     await updateDoc(doc(db, "feed", item.id), { commentsList: newComments });
-
-    // 🔔 SEND COMMENT NOTIFICATION!
     await sendNotification(
       item.authorId,
       auth.currentUser.uid,
@@ -544,62 +566,47 @@ function FeedItem({ item, getTimeAgo }) {
     );
   };
 
-  // 🔥 SMART COMMENT LIKE (Prevents infinite counting!)
-  const handleCommentLike = async (commentIndex) => {
+  const handleCommentLike = async (commentIndex: number) => {
     const updatedComments = [...comments];
     const comment = updatedComments[commentIndex];
-
-    // Initialize the likedBy array if it doesn't exist
     if (!comment.likedBy) comment.likedBy = [];
-
     const userUid = auth.currentUser.uid;
     const hasLiked = comment.likedBy.includes(userUid);
-
     if (hasLiked) {
-      // If already liked, UNLIKE it (remove name, decrease count)
       comment.likes = (comment.likes || 1) - 1;
-      comment.likedBy = comment.likedBy.filter((id) => id !== userUid);
+      comment.likedBy = comment.likedBy.filter((id: string) => id !== userUid);
     } else {
-      // If not liked, LIKE it (add name, increase count)
       comment.likes = (comment.likes || 0) + 1;
       comment.likedBy.push(userUid);
     }
-
     setComments(updatedComments);
     await updateDoc(doc(db, "feed", item.id), {
       commentsList: updatedComments,
     });
   };
 
-  const handleReply = async (commentIndex) => {
+  const handleReply = async (commentIndex: number) => {
     if (!replyText.trim()) return;
-
     let authorName = auth.currentUser?.email?.split("@")[0] || "You";
     if (auth.currentUser) {
       const userDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
-      if (userDoc.exists() && userDoc.data().fullName) {
+      if (userDoc.exists() && userDoc.data().fullName)
         authorName = userDoc.data().fullName;
-      }
     }
-
     const updatedComments = [...comments];
     if (!updatedComments[commentIndex].replies)
       updatedComments[commentIndex].replies = [];
-
     updatedComments[commentIndex].replies.push({
       text: replyText,
       author: authorName,
       time: "Just now",
     });
-
     setComments(updatedComments);
     setReplyText("");
     setReplyingToIndex(null);
     await updateDoc(doc(db, "feed", item.id), {
       commentsList: updatedComments,
     });
-
-    // 🔔 SEND REPLY NOTIFICATION!
     await sendNotification(
       item.authorId,
       auth.currentUser.uid,
@@ -710,9 +717,7 @@ function FeedItem({ item, getTimeAgo }) {
             )}
           </div>
         </Link>
-
         <div className="flex-1">
-          {/* 🔥 NAME + CELEBRITY BLUE TICK */}
           <div className="flex items-center gap-1.5">
             <p className="font-semibold text-sm text-white">
               {item.authorName || "Anonymous"}
@@ -734,7 +739,6 @@ function FeedItem({ item, getTimeAgo }) {
           </div>
           <p className="text-gray-500 text-xs">{getTimeAgo(item.createdAt)}</p>
         </div>
-
         {auth.currentUser &&
           item.authorId &&
           auth.currentUser.uid !== item.authorId && (
@@ -762,6 +766,25 @@ function FeedItem({ item, getTimeAgo }) {
         >
           💬 {comments.length}
         </button>
+
+        <button
+          onClick={() =>
+            onGiftClick(item.authorId, item.authorName || "Creator", item.id)
+          }
+          className={`flex items-center gap-2 transition text-sm font-semibold relative ${
+            totalGiftsReceived > 0
+              ? "text-pink-500 font-bold"
+              : "text-gray-400 hover:text-pink-500"
+          }`}
+        >
+          🎁 Gift
+          {totalGiftsReceived > 0 && (
+            <span className="bg-pink-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full min-w-[18px] text-center">
+              {totalGiftsReceived}
+            </span>
+          )}
+        </button>
+
         <button
           onClick={handleShare}
           className="flex items-center gap-2 text-gray-400 hover:text-green-400 transition text-sm"
@@ -777,7 +800,7 @@ function FeedItem({ item, getTimeAgo }) {
               No comments yet. Be the first!
             </p>
           ) : (
-            comments.map((c, i) => (
+            comments.map((c: any, i: number) => (
               <div key={i} className="mb-4 bg-[#0a0a0a] p-3 rounded-lg">
                 <div className="flex justify-between items-start">
                   <div>
@@ -793,10 +816,9 @@ function FeedItem({ item, getTimeAgo }) {
                     ❤️ {c.likes || 0}
                   </button>
                 </div>
-
                 {c.replies && c.replies.length > 0 && (
                   <div className="ml-4 mt-2 border-l-2 border-gray-800 pl-3">
-                    {c.replies.map((r, ri) => (
+                    {c.replies.map((r: any, ri: number) => (
                       <div key={ri} className="mb-1">
                         <span className="font-bold text-gray-400 text-xs">
                           {r.author}:{" "}
@@ -806,7 +828,6 @@ function FeedItem({ item, getTimeAgo }) {
                     ))}
                   </div>
                 )}
-
                 <button
                   onClick={() =>
                     setReplyingToIndex(replyingToIndex === i ? null : i)
@@ -842,7 +863,6 @@ function FeedItem({ item, getTimeAgo }) {
               </div>
             ))
           )}
-
           <form onSubmit={handleComment} className="flex gap-2 mt-3">
             <input
               type="text"
@@ -860,7 +880,6 @@ function FeedItem({ item, getTimeAgo }) {
           </form>
         </div>
       )}
-
       {toast && (
         <div className="absolute top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg text-sm shadow-lg z-50">
           {toast}
@@ -868,21 +887,23 @@ function FeedItem({ item, getTimeAgo }) {
       )}
     </div>
   );
-}
+} // 🔥 THIS CLOSING BRACE WAS LIKELY MISSING!
+
+// =================================================================
 // ✅ POST MODAL WITH VIDEO UPLOAD
-function PostModal({ onClose, onSuccess }) {
+// =================================================================
+function PostModal({ onClose, onSuccess }: any) {
   const [postType, setPostType] = useState("social");
   const [content, setContent] = useState("");
   const [title, setTitle] = useState("");
   const [videoUrl, setVideoUrl] = useState("");
-  const [videoFile, setVideoFile] = useState(null);
+  const [videoFile, setVideoFile] = useState<any>(null);
   const [uploadingVideo, setUploadingVideo] = useState(false);
   const [videoCaption, setVideoCaption] = useState("");
   const [videoLocation, setVideoLocation] = useState("");
   const [loading, setLoading] = useState(false);
 
-  // Upload video to Cloudinary
-  const uploadVideoToCloudinary = async (file) => {
+  const uploadVideoToCloudinary = async (file: any) => {
     setUploadingVideo(true);
     const data = new FormData();
     data.append("file", file);
@@ -892,10 +913,7 @@ function PostModal({ onClose, onSuccess }) {
     try {
       const res = await fetch(
         "https://api.cloudinary.com/v1_1/qxd9ghri/video/upload",
-        {
-          method: "POST",
-          body: data,
-        },
+        { method: "POST", body: data },
       );
       const result = await res.json();
       return result.secure_url;
@@ -908,24 +926,21 @@ function PostModal({ onClose, onSuccess }) {
     }
   };
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = async (e: any) => {
     e.preventDefault();
     setLoading(true);
     try {
       let authorName = auth.currentUser?.email?.split("@")[0] || "Anonymous";
-      let isVerified = false; // 🔥 DEFAULT TO FALSE
+      let isVerified = false;
 
       if (auth.currentUser) {
         const userDoc = await getDoc(doc(db, "users", auth.currentUser.uid));
         if (userDoc.exists()) {
-          if (userDoc.data().fullName) {
-            authorName = userDoc.data().fullName;
-          }
-          isVerified = userDoc.data().isVerified || false; // 🔥 GET VERIFICATION STATUS
+          if (userDoc.data().fullName) authorName = userDoc.data().fullName;
+          isVerified = userDoc.data().isVerified || false;
         }
       }
 
-      // Handle video upload if file exists
       let finalVideoUrl = videoUrl;
       if (postType === "video" && videoFile) {
         finalVideoUrl = await uploadVideoToCloudinary(videoFile);
@@ -944,7 +959,7 @@ function PostModal({ onClose, onSuccess }) {
         videoLocation,
         authorId: auth.currentUser?.uid,
         authorName: authorName,
-        isAuthorVerified: isVerified, // 🔥 SAVE IT TO THE POST!
+        isAuthorVerified: isVerified,
         createdAt: serverTimestamp(),
         likes: 0,
         commentsList: [],
@@ -963,8 +978,6 @@ function PostModal({ onClose, onSuccess }) {
     <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-[#151515] border border-gray-800 rounded-2xl p-6 max-w-lg w-full max-h-[90vh] overflow-y-auto">
         <h2 className="text-2xl font-bold mb-6">Create Post</h2>
-
-        {/* Post Type Selector */}
         <div className="grid grid-cols-3 gap-2 mb-6">
           {["social", "product", "video", "event", "job"].map((type) => (
             <button
@@ -976,9 +989,7 @@ function PostModal({ onClose, onSuccess }) {
             </button>
           ))}
         </div>
-
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Title Field (for non-social posts) */}
           {postType !== "social" && (
             <input
               type="text"
@@ -989,11 +1000,8 @@ function PostModal({ onClose, onSuccess }) {
               required
             />
           )}
-
-          {/* Video Upload Section */}
           {postType === "video" && (
             <div className="space-y-4">
-              {/* Video File Upload */}
               <div>
                 <label className="block text-xs text-gray-400 mb-2">
                   Upload Video
@@ -1002,7 +1010,7 @@ function PostModal({ onClose, onSuccess }) {
                   <input
                     type="file"
                     accept="video/*"
-                    onChange={(e) => setVideoFile(e.target.files[0])}
+                    onChange={(e) => setVideoFile(e.target.files?.[0] || null)}
                     className="hidden"
                     id="video-upload"
                   />
@@ -1033,8 +1041,6 @@ function PostModal({ onClose, onSuccess }) {
                   </label>
                 </div>
               </div>
-
-              {/* OR Paste URL */}
               <div className="relative">
                 <div className="absolute inset-0 flex items-center">
                   <div className="w-full border-t border-gray-700"></div>
@@ -1045,7 +1051,6 @@ function PostModal({ onClose, onSuccess }) {
                   </span>
                 </div>
               </div>
-
               <input
                 type="url"
                 value={videoUrl}
@@ -1053,8 +1058,6 @@ function PostModal({ onClose, onSuccess }) {
                 className="w-full bg-[#1a1a1a] border border-gray-700 rounded-xl px-4 py-3 text-white focus:border-cyan-400 focus:outline-none"
                 placeholder="https://example.com/video.mp4"
               />
-
-              {/* Video Caption */}
               <div>
                 <label className="block text-xs text-gray-400 mb-1">
                   Caption (Optional)
@@ -1067,8 +1070,6 @@ function PostModal({ onClose, onSuccess }) {
                   placeholder="Add a caption to your video..."
                 />
               </div>
-
-              {/* Video Location */}
               <div>
                 <label className="block text-xs text-gray-400 mb-1">
                   Location (Optional)
@@ -1083,8 +1084,6 @@ function PostModal({ onClose, onSuccess }) {
               </div>
             </div>
           )}
-
-          {/* Content/Description Field */}
           <textarea
             value={content}
             onChange={(e) => setContent(e.target.value)}
@@ -1097,8 +1096,6 @@ function PostModal({ onClose, onSuccess }) {
             }
             required
           />
-
-          {/* Submit Buttons */}
           <div className="flex gap-3 pt-2">
             <button
               type="button"

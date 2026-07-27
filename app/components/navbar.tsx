@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
+import WalletBadge from "./WalletBadge";
 import { useRouter } from "next/navigation";
 import { auth, db } from "../lib/firebase";
 import { signOut, onAuthStateChanged } from "firebase/auth";
@@ -110,47 +111,59 @@ export default function Navbar() {
 
         {/* RIGHT SIDE ACTIONS */}
         <div className="flex items-center gap-3">
-          {/* 🔔 NOTIFICATION BELL WITH BADGE */}
-          <Link
-            href="/notifications"
-            className="relative w-10 h-10 bg-[#1a1a1a] hover:bg-[#222] rounded-xl flex items-center justify-center transition"
-          >
-            <span className="text-xl">🔔</span>
-            {unreadCount > 0 && (
-              <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                {unreadCount > 9 ? "9+" : unreadCount}
-              </div>
-            )}
-          </Link>
+          {user ? (
+            // 🔥 SHOW THESE ONLY IF LOGGED IN
+            <>
+              <WalletBadge />
+              <Link
+                href="/notifications"
+                className="relative w-10 h-10 bg-[#1a1a1a] hover:bg-[#222] rounded-xl flex items-center justify-center transition"
+              >
+                <span className="text-xl">🔔</span>
+                {unreadCount > 0 && (
+                  <div className="absolute -top-1 -right-1 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </div>
+                )}
+              </Link>
 
-          {/* 4x4 MENU BOX */}
-          <button
-            onClick={toggleMenu}
-            className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-lg hover:scale-105 transition active:scale-95 ${isOpen ? "bg-cyan-500" : "bg-white"}`}
-          >
-            <svg
-              className={`w-6 h-6 ${isOpen ? "text-black" : "text-black"} transition`}
-              fill="none"
-              stroke="currentColor"
-              viewBox="0 0 24 24"
+              <button
+                onClick={toggleMenu}
+                className={`w-10 h-10 rounded-xl flex items-center justify-center shadow-lg hover:scale-105 transition active:scale-95 ${isOpen ? "bg-cyan-500" : "bg-white"}`}
+              >
+                <svg
+                  className={`w-6 h-6 ${isOpen ? "text-black" : "text-black"} transition`}
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  {isOpen ? (
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M6 18L18 6M6 6l12 12"
+                    />
+                  ) : (
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M4 6h16M4 12h16M4 18h16"
+                    />
+                  )}
+                </svg>
+              </button>
+            </>
+          ) : (
+            // 🔥 SHOW LOGIN BUTTON IF LOGGED OUT
+            <Link
+              href="/login"
+              className="bg-cyan-500 text-black font-bold px-4 py-2 rounded-full text-sm hover:bg-cyan-400 transition"
             >
-              {isOpen ? (
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M6 18L18 6M6 6l12 12"
-                />
-              ) : (
-                <path
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  strokeWidth={2}
-                  d="M4 6h16M4 12h16M4 18h16"
-                />
-              )}
-            </svg>
-          </button>
+              Login
+            </Link>
+          )}
         </div>
       </nav>
 
@@ -226,7 +239,14 @@ export default function Navbar() {
               <span className="text-xl">📊</span>{" "}
               <span className="font-medium">Analytics</span>
             </Link>
-
+            <Link
+              href="/mygifts"
+              onClick={closeMenu}
+              className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-white/10 transition text-white"
+            >
+              <span className="text-xl">🎁</span>{" "}
+              <span className="font-medium">My Gifts</span>
+            </Link>
             <Link
               href="/settings"
               onClick={closeMenu}

@@ -9,9 +9,11 @@ import {
   collection,
   query,
   where,
+  orderBy,
   getDocs,
   updateDoc,
   arrayUnion,
+  increment,
 } from "firebase/firestore";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth, db } from "../lib/firebase";
@@ -51,7 +53,7 @@ const AFRICAN_COUNTRY_CODES = [
   { country: "Mauritius", code: "+230", flag: "🇲🇺" },
 ];
 
-// 🔥 THE ULTIMATE EDUCATIONAL LEVELS LIST (Categorized for clarity)
+// 🔥 THE ULTIMATE EDUCATIONAL LEVELS LIST
 const EDUCATIONAL_LEVELS = [
   "Junior Secondary (JSS 1 - 3)",
   "Senior Secondary (SSS 1 - 3)",
@@ -76,10 +78,10 @@ const EDUCATIONAL_LEVELS = [
   "Alumni / Graduate (Not currently studying)",
 ];
 
-// 🔥 HELPER: RENDER 5 STARS
+// 🔥 HELPER: RENDER STARS (Starts at 0, not 5)
 const renderStars = (rating) => {
   const stars = [];
-  const roundedRating = Math.round(rating || 5.0);
+  const roundedRating = Math.round(rating || 0);
   for (let i = 1; i <= 5; i++) {
     stars.push(
       <svg
@@ -97,17 +99,18 @@ const renderStars = (rating) => {
 export default function MyProfile() {
   const router = useRouter();
   const [user, setUser] = useState(null);
+  const [posts, setPosts] = useState([]); // ✅ NEW: User's feed posts
   const [products, setProducts] = useState([]);
+  const [services, setServices] = useState([]);
   const [loading, setLoading] = useState(true);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [activeTab, setActiveTab] = useState("posts"); // ✅ NEW: Tab State
 
-  // 🔥 STATE FOR DYNAMIC LISTS
   const [schoolsList, setSchoolsList] = useState([]);
   const [coursesList, setCoursesList] = useState([]);
-
   const [editData, setEditData] = useState({
     fullName: "",
     username: "",
@@ -126,7 +129,6 @@ export default function MyProfile() {
     phoneNumber: "",
   });
 
-  // 🔥 FETCH DYNAMIC METADATA ON LOAD
   useEffect(() => {
     const fetchMetadata = async () => {
       try {
@@ -198,20 +200,37 @@ export default function MyProfile() {
             id: currentUser.uid,
             fullName: "Student",
             email: currentUser.email,
+            rating: 0, // ✅ Start at 0
+            reviewCount: 0,
           };
           await setDoc(doc(db, "users", currentUser.uid), basicUser);
           setUser(basicUser);
         }
+
+        // ✅ 1. Fetch User's Feed Posts
+        const postsQuery = query(
+          collection(db, "feed"),
+          where("authorId", "==", currentUser.uid),
+          orderBy("createdAt", "desc"),
+        );
+        const postsSnap = await getDocs(postsQuery);
+        setPosts(postsSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+
+        // ✅ 2. Fetch Physical Products
         const productsQuery = query(
           collection(db, "products"),
           where("sellerId", "==", currentUser.uid),
         );
-        setProducts(
-          (await getDocs(productsQuery)).docs.map((d) => ({
-            id: d.id,
-            ...d.data(),
-          })),
+        const productsSnap = await getDocs(productsQuery);
+        setProducts(productsSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+
+        // ✅ 3. Fetch Digital Services
+        const servicesQuery = query(
+          collection(db, "services"),
+          where("creatorId", "==", currentUser.uid),
         );
+        const servicesSnap = await getDocs(servicesQuery);
+        setServices(servicesSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
       } catch (err) {
         console.error(err);
       } finally {
@@ -254,8 +273,6 @@ export default function MyProfile() {
 
   const handleSaveProfile = async () => {
     setSaving(true);
-
-    // 🔥 SELF-LEARNING LOGIC: If the school/course is new, add it to the database!
     if (editData.school && !schoolsList.includes(editData.school)) {
       await updateDoc(doc(db, "app_metadata", "defaults"), {
         schools: arrayUnion(editData.school),
@@ -266,8 +283,6 @@ export default function MyProfile() {
         courses: arrayUnion(editData.department),
       });
     }
-
-    // Save user profile
     await updateDoc(doc(db, "users", user.id), editData);
     setUser({ ...user, ...editData });
     setIsEditing(false);
@@ -282,22 +297,23 @@ export default function MyProfile() {
   const isExpiringSoon = user?.isVerified && daysLeft <= 7 && daysLeft > 0;
   const isExpired = user?.isVerified && daysLeft <= 0;
 
-  if (loading)
+  if (loading) {
     return (
       <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
         <div className="w-10 h-10 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"></div>
       </div>
     );
+  }
   if (!user) return null;
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white pb-20">
       {/* COVER */}
-      <div className="relative h-48 md:h-64 bg-gradient-to-r from-purple-600 to-cyan-600 overflow-hidden">
+      <div className="relative h-40 md:h-56 bg-gradient-to-r from-purple-600 to-cyan-600 overflow-hidden">
         {user.coverPhoto && (
           <img src={user.coverPhoto} className="w-full h-full object-cover" />
         )}
-        <label className="absolute bottom-4 right-4 bg-black/60 hover:bg-black/80 backdrop-blur-sm px-4 py-2 rounded-full cursor-pointer text-sm border border-white/20">
+        <label className="absolute bottom-2 right-2 bg-black/60 hover:bg-black/80 backdrop-blur-sm px-3 py-1.5 rounded-full cursor-pointer text-xs border border-white/20">
           {uploadingCover ? "⏳" : "📷 Change Cover"}
           <input
             type="file"
@@ -308,18 +324,18 @@ export default function MyProfile() {
         </label>
       </div>
 
-      <div className="max-w-4xl mx-auto px-4">
-        {/* PROFILE HEADER */}
-        <div className="mt-8 mb-8 flex flex-col md:flex-row items-start md:items-center gap-6">
-          <div className="relative">
-            <div className="w-32 h-32 rounded-full border-4 border-[#0a0a0a] overflow-hidden bg-gray-800 flex items-center justify-center text-4xl font-bold text-cyan-400">
+      <div className="max-w-2xl mx-auto px-4">
+        {/* PROFILE HEADER (Compact) */}
+        <div className="mt-[-40px] mb-6 flex flex-col items-center text-center">
+          <div className="relative mb-3">
+            <div className="w-24 h-24 rounded-full border-4 border-[#0a0a0a] overflow-hidden bg-gray-800 flex items-center justify-center text-3xl font-bold text-cyan-400">
               {user.avatar ? (
                 <img src={user.avatar} className="w-full h-full object-cover" />
               ) : (
                 user.fullName?.charAt(0).toUpperCase()
               )}
             </div>
-            <label className="absolute bottom-0 right-0 w-10 h-10 bg-cyan-500 rounded-full flex items-center justify-center cursor-pointer border-4 border-[#0a0a0a]">
+            <label className="absolute bottom-0 right-0 w-8 h-8 bg-cyan-500 rounded-full flex items-center justify-center cursor-pointer border-4 border-[#0a0a0a] text-sm">
               {uploadingAvatar ? "⏳" : "📷"}
               <input
                 type="file"
@@ -330,163 +346,276 @@ export default function MyProfile() {
             </label>
           </div>
 
-          <div className="flex-1 w-full">
-            <div className="flex justify-between items-start mb-2">
-              <div className="flex items-center gap-2">
-                <h1 className="text-2xl md:text-3xl font-bold">
-                  {user.fullName || "Campus Student"}
-                </h1>
-                {user.isVerified && (
-                  <svg
-                    className="w-6 h-6 text-cyan-400"
-                    fill="currentColor"
-                    viewBox="0 0 20 20"
-                    title="Verified Student"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
-                )}
-              </div>
-              <button
-                onClick={() => setIsEditing(true)}
-                className="bg-[#1a1a1a] hover:bg-[#222] border border-gray-800 px-4 py-2 rounded-full text-sm font-semibold transition"
+          <div className="flex items-center gap-2 mb-1">
+            <h1 className="text-xl font-bold">
+              {user.fullName || "Campus Student"}
+            </h1>
+            {user.isVerified && (
+              <svg
+                className="w-5 h-5 text-cyan-400"
+                fill="currentColor"
+                viewBox="0 0 20 20"
+                title="Verified Student"
               >
-                ✏️ Edit Profile
-              </button>
-            </div>
+                <path
+                  fillRule="evenodd"
+                  d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z"
+                  clipRule="evenodd"
+                />
+              </svg>
+            )}
+          </div>
 
-            <div className="flex items-center gap-2 mb-3">
-              <div className="flex">{renderStars(user.rating)}</div>
-              <span className="text-sm text-gray-400">
-                ({user.rating || "5.0"} / 5.0 • {user.reviewCount || 0} Reviews)
+          <div className="flex items-center gap-2 mb-3">
+            <div className="flex">{renderStars(user.rating)}</div>
+            <span className="text-xs text-gray-400">
+              ({user.rating ? user.rating.toFixed(1) : "0.0"} •{" "}
+              {user.reviewCount || 0} Reviews)
+            </span>
+          </div>
+
+          <p className="text-gray-300 text-sm mb-4 max-w-md">
+            {user.bio || 'Click "Edit Profile" to add a bio...'}
+          </p>
+
+          {isExpiringSoon && (
+            <div className="mt-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3 flex items-center justify-between">
+              <span className="text-yellow-400 text-sm font-semibold">
+                ⚠️ Your verification expires in {daysLeft} days!
               </span>
+              <Link
+                href="/verify"
+                className="text-xs bg-yellow-500 text-black px-3 py-1 rounded-full font-bold hover:bg-yellow-400 transition"
+              >
+                Renew Now
+              </Link>
             </div>
+          )}
+          {isExpired && (
+            <div className="mt-4 bg-red-500/10 border border-red-500/30 rounded-lg p-3 flex items-center justify-between">
+              <span className="text-red-400 text-sm font-semibold">
+                🚫 Your verification has expired.
+              </span>
+              <Link
+                href="/verify"
+                className="text-xs bg-red-500 text-white px-3 py-1 rounded-full font-bold hover:bg-red-400 transition"
+              >
+                Renew Now
+              </Link>
+            </div>
+          )}
 
-            <p className="text-gray-300 text-sm md:text-base leading-relaxed pr-8">
-              {user.bio || 'Click "Edit Profile" to add a bio...'}
-            </p>
-
-            {isExpiringSoon && (
-              <div className="mt-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3 flex items-center justify-between">
-                <span className="text-yellow-400 text-sm font-semibold">
-                  ⚠️ Your verification expires in {daysLeft} days!
-                </span>
-                <Link
-                  href="/verify"
-                  className="text-xs bg-yellow-500 text-black px-3 py-1 rounded-full font-bold hover:bg-yellow-400 transition"
-                >
-                  Renew Now
-                </Link>
-              </div>
+          <div className="flex flex-wrap gap-3 mb-6 text-xs text-gray-400">
+            {user.school && (
+              <span className="bg-[#111] px-3 py-1 rounded-full">
+                🎓 {user.school}
+              </span>
             )}
-            {isExpired && (
-              <div className="mt-4 bg-red-500/10 border border-red-500/30 rounded-lg p-3 flex items-center justify-between">
-                <span className="text-red-400 text-sm font-semibold">
-                  🚫 Your verification has expired.
-                </span>
-                <Link
-                  href="/verify"
-                  className="text-xs bg-red-500 text-white px-3 py-1 rounded-full font-bold hover:bg-red-400 transition"
-                >
-                  Renew Now
-                </Link>
-              </div>
+            {user.department && (
+              <span className="bg-[#111] px-3 py-1 rounded-full">
+                📚 {user.department}
+              </span>
             )}
+            {user.yearOfStudy && (
+              <span className="bg-[#111] px-3 py-1 rounded-full">
+                🎒 {user.yearOfStudy}
+              </span>
+            )}
+            {user.status && (
+              <span className="bg-[#111] px-3 py-1 rounded-full">
+                💍 {user.status}
+              </span>
+            )}
+          </div>
 
-            <div className="flex flex-wrap gap-3 mt-4 text-xs text-gray-400">
-              {user.school && (
-                <span className="bg-[#111] px-3 py-1 rounded-full">
-                  🎓 {user.school}
-                </span>
-              )}
-              {user.department && (
-                <span className="bg-[#111] px-3 py-1 rounded-full">
-                  📚 {user.department}
-                </span>
-              )}
-              {user.yearOfStudy && (
-                <span className="bg-[#111] px-3 py-1 rounded-full">
-                  🎒 {user.yearOfStudy}
-                </span>
-              )}
-              {user.status && (
-                <span className="bg-[#111] px-3 py-1 rounded-full">
-                  💍 {user.status}
-                </span>
-              )}
+          {/* STATS (Compact) */}
+          <div className="flex justify-around w-full border-y border-gray-800/50 py-4 mb-6">
+            <div className="text-center">
+              <p className="text-lg font-bold text-white">{posts.length}</p>
+              <p className="text-gray-500 text-[10px] uppercase tracking-wide">
+                Posts
+              </p>
+            </div>
+            <div className="text-center">
+              <p className="text-lg font-bold text-white">
+                {products.length + services.length}
+              </p>
+              <p className="text-gray-500 text-[10px] uppercase tracking-wide">
+                Listings
+              </p>
+            </div>
+            <div className="text-center">
+              <p className="text-lg font-bold text-white">
+                {user.followers?.length || 0}
+              </p>
+              <p className="text-gray-500 text-[10px] uppercase tracking-wide">
+                Followers
+              </p>
             </div>
           </div>
         </div>
 
-        {/* STATS */}
-        <div className="grid grid-cols-3 gap-4 mb-8 border-y border-gray-800/50 py-6">
-          <div className="text-center">
-            <p className="text-2xl font-bold text-white">{products.length}</p>
-            <p className="text-gray-400 text-xs uppercase tracking-wide">
-              Listings
-            </p>
-          </div>
-          <div className="text-center">
-            <p className="text-2xl font-bold text-white">
-              {user.followers?.length || 0}
-            </p>
-            <p className="text-gray-400 text-xs uppercase tracking-wide">
-              Followers
-            </p>
-          </div>
-          <div className="text-center">
-            <p className="text-2xl font-bold text-white">
-              {user.following?.length || 0}
-            </p>
-            <p className="text-gray-400 text-xs uppercase tracking-wide">
-              Following
-            </p>
-          </div>
+        {/* ✅ TAB NAVIGATION */}
+        <div className="flex border-b border-gray-800 mb-4 sticky top-16 bg-[#0a0a0a]/95 backdrop-blur-md z-10">
+          <button
+            onClick={() => setActiveTab("posts")}
+            className={`flex-1 py-3 text-sm font-semibold transition border-b-2 ${activeTab === "posts" ? "border-cyan-400 text-cyan-400" : "border-transparent text-gray-500"}`}
+          >
+            📝 Posts
+          </button>
+          <button
+            onClick={() => setActiveTab("listings")}
+            className={`flex-1 py-3 text-sm font-semibold transition border-b-2 ${activeTab === "listings" ? "border-cyan-400 text-cyan-400" : "border-transparent text-gray-500"}`}
+          >
+            🛒 Listings
+          </button>
+          <button
+            onClick={() => setActiveTab("services")}
+            className={`flex-1 py-3 text-sm font-semibold transition border-b-2 ${activeTab === "services" ? "border-cyan-400 text-cyan-400" : "border-transparent text-gray-500"}`}
+          >
+            🛠️ Services
+          </button>
         </div>
 
-        {/* LISTINGS */}
-        <h2 className="text-xl font-bold mb-6">My Active Listings</h2>
-        {products.length === 0 ? (
-          <div className="text-center py-16 bg-[#111] border border-gray-800/50 rounded-2xl">
-            <p className="text-gray-400 mb-4">No items listed yet.</p>
-            <Link
-              href="/sell"
-              className="bg-cyan-500 text-black font-bold px-6 py-2 rounded-full"
-            >
-              + List Item
-            </Link>
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {products.map((p) => (
-              <Link href={`/item/${p.id}`} key={p.id} className="block">
-                <div className="bg-[#111] border border-gray-800/50 rounded-xl overflow-hidden hover:border-cyan-500 transition">
-                  <div className="h-40 bg-gray-900">
+        {/* ✅ TAB CONTENT: POSTS */}
+        {activeTab === "posts" && (
+          <div className="space-y-4">
+            {posts.length === 0 ? (
+              <div className="text-center py-12 bg-[#111] border border-gray-800/50 rounded-2xl">
+                <p className="text-gray-400 text-sm">
+                  No posts yet. Share your thoughts!
+                </p>
+              </div>
+            ) : (
+              posts.map((post) => (
+                <div
+                  key={post.id}
+                  className="bg-[#111] border border-gray-800/50 rounded-xl p-4"
+                >
+                  <p className="text-gray-100 text-sm mb-2">{post.content}</p>
+                  {post.imageUrl && (
                     <img
-                      src={p.imageUrl}
-                      className="w-full h-full object-cover"
+                      src={post.imageUrl}
+                      className="w-full h-48 object-cover rounded-lg mb-2"
                     />
-                  </div>
-                  <div className="p-3">
-                    <h3 className="font-semibold text-sm truncate">
-                      {p.title}
-                    </h3>
-                    <p className="text-cyan-400 font-bold text-sm">
-                      ₦{Number(p.price).toLocaleString()}
-                    </p>
+                  )}
+                  <div className="flex gap-4 text-xs text-gray-500">
+                    <span>❤️ {post.likes || 0}</span>
+                    <span>💬 {post.commentsList?.length || 0}</span>
+                    <span>
+                      {post.createdAt?.toDate
+                        ? post.createdAt.toDate().toLocaleDateString()
+                        : "Recently"}
+                    </span>
                   </div>
                 </div>
-              </Link>
-            ))}
+              ))
+            )}
+          </div>
+        )}
+
+        {/* ✅ TAB CONTENT: LISTINGS (Compact Grid) */}
+        {activeTab === "listings" && (
+          <div className="grid grid-cols-2 gap-3">
+            {products.length === 0 ? (
+              <div className="col-span-2 text-center py-12 bg-[#111] border border-gray-800/50 rounded-2xl">
+                <p className="text-gray-400 text-sm mb-3">
+                  No items listed yet.
+                </p>
+                <Link
+                  href="/sell"
+                  className="bg-cyan-500 text-black text-xs font-bold px-4 py-2 rounded-full"
+                >
+                  + List Item
+                </Link>
+              </div>
+            ) : (
+              products.map((p) => (
+                <Link href={`/item/${p.id}`} key={p.id} className="block">
+                  <div className="bg-[#111] border border-gray-800/50 rounded-xl overflow-hidden hover:border-cyan-500 transition">
+                    <div className="aspect-square bg-gray-900 relative">
+                      <img
+                        src={p.imageUrl}
+                        className="w-full h-full object-cover"
+                      />
+                      {p.status === "sold" && (
+                        <div className="absolute inset-0 bg-black/60 flex items-center justify-center">
+                          <span className="bg-red-500 text-white text-xs font-bold px-2 py-1 rounded">
+                            SOLD
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                    <div className="p-2">
+                      <h3 className="font-semibold text-xs truncate">
+                        {p.title}
+                      </h3>
+                      <p className="text-cyan-400 font-bold text-xs">
+                        ₦{Number(p.price).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                </Link>
+              ))
+            )}
+          </div>
+        )}
+
+        {/* ✅ TAB CONTENT: SERVICES (Compact Grid) */}
+        {activeTab === "services" && (
+          <div className="grid grid-cols-2 gap-3">
+            {services.length === 0 ? (
+              <div className="col-span-2 text-center py-12 bg-[#111] border border-gray-800/50 rounded-2xl">
+                <p className="text-gray-400 text-sm mb-3">
+                  No services offered yet.
+                </p>
+                <Link
+                  href="/services/create"
+                  className="bg-purple-500 text-white text-xs font-bold px-4 py-2 rounded-full"
+                >
+                  + Offer Service
+                </Link>
+              </div>
+            ) : (
+              services.map((service) => (
+                <Link
+                  href={`/services/${service.id}`}
+                  key={service.id}
+                  className="block"
+                >
+                  <div className="bg-[#111] border border-gray-800/50 rounded-xl overflow-hidden hover:border-cyan-500 transition">
+                    <div className="aspect-square bg-gray-900 relative">
+                      {service.imageUrl ? (
+                        <img
+                          src={service.imageUrl}
+                          className="w-full h-full object-cover"
+                        />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-3xl">
+                          🛠️
+                        </div>
+                      )}
+                      <span className="absolute top-1 left-1 bg-black/70 text-[9px] font-bold px-1.5 py-0.5 rounded text-white">
+                        {service.category}
+                      </span>
+                    </div>
+                    <div className="p-2">
+                      <h3 className="font-semibold text-xs truncate">
+                        {service.title}
+                      </h3>
+                      <p className="text-cyan-400 font-bold text-xs">
+                        ₦{Number(service.price).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+                </Link>
+              ))
+            )}
           </div>
         )}
       </div>
 
-      {/* 🔥 EDIT MODAL WITH SELF-LEARNING DATALISTS & ULTIMATE LEVELS */}
+      {/* 🔥 EDIT MODAL (Kept exactly as you had it) */}
       {isEditing && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-[#151515] border border-gray-800 rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -507,13 +636,12 @@ export default function MyProfile() {
                   onChange={(e) =>
                     setEditData({ ...editData, fullName: e.target.value })
                   }
-                  className="w-full bg-[#1a1a1a] border border-gray-700 rounded-xl px-4 py-3 text-white focus:border-cyan-400 focus:outline-none"
+                  className="w-full bg-[#1a1a1a] border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-400"
                 />
               </div>
-
               <div>
                 <label className="block text-xs text-gray-400 mb-1">
-                  School / Institution (Type to add new)
+                  School / Institution
                 </label>
                 <input
                   list="schools-datalist"
@@ -521,8 +649,8 @@ export default function MyProfile() {
                   onChange={(e) =>
                     setEditData({ ...editData, school: e.target.value })
                   }
-                  className="w-full bg-[#1a1a1a] border border-gray-700 rounded-xl px-4 py-3 text-white focus:border-cyan-400 focus:outline-none"
-                  placeholder="Start typing your school..."
+                  className="w-full bg-[#1a1a1a] border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-400"
+                  placeholder="Start typing..."
                 />
                 <datalist id="schools-datalist">
                   {schoolsList.map((s) => (
@@ -530,10 +658,9 @@ export default function MyProfile() {
                   ))}
                 </datalist>
               </div>
-
               <div>
                 <label className="block text-xs text-gray-400 mb-1">
-                  Course / Department (Type to add new)
+                  Course / Department
                 </label>
                 <input
                   list="courses-datalist"
@@ -541,8 +668,8 @@ export default function MyProfile() {
                   onChange={(e) =>
                     setEditData({ ...editData, department: e.target.value })
                   }
-                  className="w-full bg-[#1a1a1a] border border-gray-700 rounded-xl px-4 py-3 text-white focus:border-cyan-400 focus:outline-none"
-                  placeholder="Start typing your course..."
+                  className="w-full bg-[#1a1a1a] border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-400"
+                  placeholder="Start typing..."
                 />
                 <datalist id="courses-datalist">
                   {coursesList.map((c) => (
@@ -550,8 +677,6 @@ export default function MyProfile() {
                   ))}
                 </datalist>
               </div>
-
-              {/* 🔥 ULTIMATE EDUCATIONAL LEVELS DROPDOWN */}
               <div className="md:col-span-2">
                 <label className="block text-xs text-gray-400 mb-1">
                   Current Educational Level
@@ -561,7 +686,7 @@ export default function MyProfile() {
                   onChange={(e) =>
                     setEditData({ ...editData, yearOfStudy: e.target.value })
                   }
-                  className="w-full bg-[#1a1a1a] border border-gray-700 rounded-xl px-4 py-3 text-white focus:border-cyan-400 focus:outline-none"
+                  className="w-full bg-[#1a1a1a] border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-400"
                 >
                   <option value="">Select your current level...</option>
                   {EDUCATIONAL_LEVELS.map((level) => (
@@ -571,7 +696,6 @@ export default function MyProfile() {
                   ))}
                 </select>
               </div>
-
               <div>
                 <label className="block text-xs text-gray-400 mb-1">
                   Relationship Status
@@ -581,7 +705,7 @@ export default function MyProfile() {
                   onChange={(e) =>
                     setEditData({ ...editData, status: e.target.value })
                   }
-                  className="w-full bg-[#1a1a1a] border border-gray-700 rounded-xl px-4 py-3 text-white focus:border-cyan-400 focus:outline-none"
+                  className="w-full bg-[#1a1a1a] border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-400"
                 >
                   {[
                     "Single",
@@ -596,8 +720,6 @@ export default function MyProfile() {
                   ))}
                 </select>
               </div>
-
-              {/* 🔥 COMPREHENSIVE COUNTRY CODE DROPDOWN */}
               <div>
                 <label className="block text-xs text-gray-400 mb-1">
                   Country Code
@@ -607,7 +729,7 @@ export default function MyProfile() {
                   onChange={(e) =>
                     setEditData({ ...editData, countryCode: e.target.value })
                   }
-                  className="w-full bg-[#1a1a1a] border border-gray-700 rounded-xl px-4 py-3 text-white focus:border-cyan-400 focus:outline-none"
+                  className="w-full bg-[#1a1a1a] border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-400"
                 >
                   {AFRICAN_COUNTRY_CODES.map((c) => (
                     <option key={c.code} value={c.code}>
@@ -617,7 +739,6 @@ export default function MyProfile() {
                   <option value="other">Other (Manual)</option>
                 </select>
               </div>
-
               <div>
                 <label className="block text-xs text-gray-400 mb-1">
                   Phone Number
@@ -630,10 +751,10 @@ export default function MyProfile() {
                       onChange={(e) =>
                         setEditData({
                           ...editData,
-                          CountryCode: e.target.value,
+                          countryCode: e.target.value,
                         })
                       }
-                      className="w-24 bg-[#1a1a1a] border border-gray-700 rounded-xl px-2 py-3 text-white focus:border-cyan-400 focus:outline-none text-center"
+                      className="w-24 bg-[#1a1a1a] border border-gray-700 rounded-xl px-2 py-3 text-white focus:outline-none focus:border-cyan-400 text-center"
                       placeholder="+234"
                     />
                   ) : (
@@ -648,12 +769,11 @@ export default function MyProfile() {
                     onChange={(e) =>
                       setEditData({ ...editData, phoneNumber: e.target.value })
                     }
-                    className="flex-1 bg-[#1a1a1a] border border-gray-700 rounded-xl px-4 py-3 text-white focus:border-cyan-400 focus:outline-none"
+                    className="flex-1 bg-[#1a1a1a] border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-400"
                     placeholder="8012345678"
                   />
                 </div>
               </div>
-
               <div className="md:col-span-2">
                 <label className="block text-xs text-gray-400 mb-1">
                   Bio (Max 180 chars)
@@ -667,7 +787,7 @@ export default function MyProfile() {
                     })
                   }
                   rows={3}
-                  className="w-full bg-[#1a1a1a] border border-gray-700 rounded-xl px-4 py-3 text-white focus:border-cyan-400 focus:outline-none resize-none"
+                  className="w-full bg-[#1a1a1a] border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-400 resize-none"
                 />
                 <p className="text-xs text-right text-gray-500 mt-1">
                   {editData.bio.length} / 180
