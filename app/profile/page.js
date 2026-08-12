@@ -55,27 +55,30 @@ const AFRICAN_COUNTRY_CODES = [
 
 // 🔥 THE ULTIMATE EDUCATIONAL LEVELS LIST
 const EDUCATIONAL_LEVELS = [
-  "Junior Secondary (JSS 1 - 3)",
-  "Senior Secondary (SSS 1 - 3)",
-  "JAMBITE / Awaiting Admission",
-  "Foundation / Pre-Degree (JUPEB/IJMB)",
-  "University: 100 Level",
-  "University: 200 Level",
-  "University: 300 Level",
-  "University: 400 Level",
-  "University: 500+ Level",
-  "Polytechnic: ND 1",
-  "Polytechnic: ND 2",
-  "Polytechnic: HND 1",
-  "Polytechnic: HND 2",
-  "College of Education: NCE 1",
-  "College of Education: NCE 2",
-  "College of Education: NCE 3",
+  "Junior Secondary ",
+  "Senior Secondary ",
+  "JAMBITE ",
+  "Pre-Degree (JUPEB/IJMB)",
+  "100 Level",
+  "200 Level",
+  "300 Level",
+  "400 Level",
+  "500+ Level",
+  "ND 1",
+  "ND 2",
+  "HND 1",
+  "HND 2",
+  "NCE 1",
+  "NCE 2",
+  "NCE 3",
+  "NYSC Copper",
   "Postgraduate Diploma (PGD)",
   "Masters Degree",
   "PhD / Doctorate",
   "Self-Taught / Bootcamp Graduate",
-  "Alumni / Graduate (Not currently studying)",
+  "Alumni / Graduate",
+  "Bussiness Owner",
+  "CEO",
 ];
 
 // 🔥 HELPER: RENDER STARS (Starts at 0, not 5)
@@ -99,15 +102,16 @@ const renderStars = (rating) => {
 export default function MyProfile() {
   const router = useRouter();
   const [user, setUser] = useState(null);
-  const [posts, setPosts] = useState([]); // ✅ NEW: User's feed posts
+  const [posts, setPosts] = useState([]);
   const [products, setProducts] = useState([]);
   const [services, setServices] = useState([]);
+  const [shops, setShops] = useState([]); // 🔥 NEW: User's shops
   const [loading, setLoading] = useState(true);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [uploadingCover, setUploadingCover] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [activeTab, setActiveTab] = useState("posts"); // ✅ NEW: Tab State
+  const [activeTab, setActiveTab] = useState("posts");
 
   const [schoolsList, setSchoolsList] = useState([]);
   const [coursesList, setCoursesList] = useState([]);
@@ -200,7 +204,7 @@ export default function MyProfile() {
             id: currentUser.uid,
             fullName: "Student",
             email: currentUser.email,
-            rating: 0, // ✅ Start at 0
+            rating: 0,
             reviewCount: 0,
           };
           await setDoc(doc(db, "users", currentUser.uid), basicUser);
@@ -231,6 +235,14 @@ export default function MyProfile() {
         );
         const servicesSnap = await getDocs(servicesQuery);
         setServices(servicesSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
+
+        // 🔥 4. Fetch User's Shops
+        const shopsQuery = query(
+          collection(db, "shops"),
+          where("ownerId", "==", currentUser.uid),
+        );
+        const shopsSnap = await getDocs(shopsQuery);
+        setShops(shopsSnap.docs.map((d) => ({ id: d.id, ...d.data() })));
       } catch (err) {
         console.error(err);
       } finally {
@@ -273,20 +285,56 @@ export default function MyProfile() {
 
   const handleSaveProfile = async () => {
     setSaving(true);
-    if (editData.school && !schoolsList.includes(editData.school)) {
-      await updateDoc(doc(db, "app_metadata", "defaults"), {
-        schools: arrayUnion(editData.school),
+    try {
+      const userDoc = await getDoc(doc(db, "users", user.id));
+      const userData = userDoc.data();
+      const now = new Date();
+
+      if (userData.profileLockedUntil) {
+        const lockDate = userData.profileLockedUntil.toDate
+          ? userData.profileLockedUntil.toDate()
+          : new Date(userData.profileLockedUntil);
+
+        if (now < lockDate) {
+          const daysLeft = Math.ceil((lockDate - now) / (1000 * 60 * 60 * 24));
+          alert(
+            `⏰ Profile edits are locked for ${daysLeft} more days to prevent frequent changes.`,
+          );
+          setSaving(false);
+          setIsEditing(false);
+          return;
+        }
+      }
+
+      if (editData.school && !schoolsList.includes(editData.school)) {
+        await updateDoc(doc(db, "app_metadata", "defaults"), {
+          schools: arrayUnion(editData.school),
+        });
+      }
+      if (editData.department && !coursesList.includes(editData.department)) {
+        await updateDoc(doc(db, "app_metadata", "defaults"), {
+          courses: arrayUnion(editData.department),
+        });
+      }
+
+      const lockUntil = !userData.profileLockedUntil
+        ? new Date(now.getTime() + 45 * 24 * 60 * 60 * 1000)
+        : userData.profileLockedUntil;
+
+      await updateDoc(doc(db, "users", user.id), {
+        ...editData,
+        profileLockedUntil: lockUntil,
       });
+
+      setUser({ ...user, ...editData });
+      setIsEditing(false);
+      alert("✅ Profile updated successfully! You can edit again in 45 days.");
+    } catch (err) {
+      console.error("Error saving profile:", err);
+      alert("Failed to save profile.");
+    } finally {
+      setSaving(false);
     }
-    if (editData.department && !coursesList.includes(editData.department)) {
-      await updateDoc(doc(db, "app_metadata", "defaults"), {
-        courses: arrayUnion(editData.department),
-      });
-    }
-    await updateDoc(doc(db, "users", user.id), editData);
-    setUser({ ...user, ...editData });
-    setIsEditing(false);
-    setSaving(false);
   };
 
   const daysLeft = user?.subscriptionEnd
@@ -325,7 +373,7 @@ export default function MyProfile() {
       </div>
 
       <div className="max-w-2xl mx-auto px-4">
-        {/* PROFILE HEADER (Compact) */}
+        {/* PROFILE HEADER */}
         <div className="mt-[-40px] mb-6 flex flex-col items-center text-center">
           <div className="relative mb-3">
             <div className="w-24 h-24 rounded-full border-4 border-[#0a0a0a] overflow-hidden bg-gray-800 flex items-center justify-center text-3xl font-bold text-cyan-400">
@@ -378,6 +426,13 @@ export default function MyProfile() {
             {user.bio || 'Click "Edit Profile" to add a bio...'}
           </p>
 
+          <button
+            onClick={() => setIsEditing(true)}
+            className="mb-6 bg-[#1a1a1a] hover:bg-[#222] border border-gray-700 text-white px-6 py-2 rounded-full font-bold text-sm transition flex items-center gap-2 mx-auto"
+          >
+            ✏️ Edit Profile
+          </button>
+
           {isExpiringSoon && (
             <div className="mt-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3 flex items-center justify-between">
               <span className="text-yellow-400 text-sm font-semibold">
@@ -428,7 +483,7 @@ export default function MyProfile() {
             )}
           </div>
 
-          {/* STATS (Compact) */}
+          {/* STATS */}
           <div className="flex justify-around w-full border-y border-gray-800/50 py-4 mb-6">
             <div className="text-center">
               <p className="text-lg font-bold text-white">{posts.length}</p>
@@ -437,11 +492,9 @@ export default function MyProfile() {
               </p>
             </div>
             <div className="text-center">
-              <p className="text-lg font-bold text-white">
-                {products.length + services.length}
-              </p>
+              <p className="text-lg font-bold text-white">{shops.length}</p>
               <p className="text-gray-500 text-[10px] uppercase tracking-wide">
-                Listings
+                Shops
               </p>
             </div>
             <div className="text-center">
@@ -455,13 +508,19 @@ export default function MyProfile() {
           </div>
         </div>
 
-        {/* ✅ TAB NAVIGATION */}
+        {/* ✅ TAB NAVIGATION (NOW INCLUDES SHOPS) */}
         <div className="flex border-b border-gray-800 mb-4 sticky top-16 bg-[#0a0a0a]/95 backdrop-blur-md z-10">
           <button
             onClick={() => setActiveTab("posts")}
             className={`flex-1 py-3 text-sm font-semibold transition border-b-2 ${activeTab === "posts" ? "border-cyan-400 text-cyan-400" : "border-transparent text-gray-500"}`}
           >
             📝 Posts
+          </button>
+          <button
+            onClick={() => setActiveTab("shops")}
+            className={`flex-1 py-3 text-sm font-semibold transition border-b-2 ${activeTab === "shops" ? "border-cyan-400 text-cyan-400" : "border-transparent text-gray-500"}`}
+          >
+            🏪 Shops
           </button>
           <button
             onClick={() => setActiveTab("listings")}
@@ -514,7 +573,100 @@ export default function MyProfile() {
           </div>
         )}
 
-        {/* ✅ TAB CONTENT: LISTINGS (Compact Grid) */}
+        {/* 🔥 TAB CONTENT: SHOPS (OWNER ONLY) */}
+        {activeTab === "shops" && (
+          <div className="space-y-4">
+            <div className="text-center py-8 bg-[#111] border border-gray-800/50 rounded-2xl mb-6">
+              <h3 className="text-xl font-bold text-white mb-2">
+                Manage Your Businesses
+              </h3>
+              <p className="text-gray-400 text-sm mb-4">
+                You currently own {shops.length} shop(s).
+              </p>
+              <Link
+                href="/youbuy/plans"
+                className="bg-cyan-500 text-black text-sm font-bold px-6 py-2 rounded-full inline-block hover:bg-cyan-400 transition"
+              >
+                + Open New Shop
+              </Link>
+            </div>
+
+            {shops.length === 0 ? (
+              <div className="text-center py-12 bg-[#111] border border-gray-800/50 rounded-2xl">
+                <p className="text-gray-400 text-sm mb-4">
+                  You haven't created any shops yet.
+                </p>
+                <Link
+                  href="/youbuy/plans"
+                  className="bg-cyan-500 text-black text-xs font-bold px-4 py-2 rounded-full"
+                >
+                  View Plans
+                </Link>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {shops.map((shop) => (
+                  <Link
+                    href={`/shop/${shop.id}`}
+                    key={shop.id}
+                    className="block"
+                  >
+                    <div className="bg-[#111] border border-gray-800/50 rounded-xl p-4 flex items-center gap-4 hover:border-cyan-500 transition">
+                      <div className="w-16 h-16 rounded-xl bg-gray-900 overflow-hidden flex-shrink-0">
+                        {shop.shopLogo ? (
+                          <img
+                            src={shop.shopLogo}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex items-center justify-center text-2xl">
+                            🏪
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 mb-1">
+                          <h3 className="font-bold text-white truncate">
+                            {shop.name}
+                          </h3>
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${shop.plan === "yearly" ? "bg-purple-500/20 text-purple-400 border-purple-500/30" : shop.plan === "6-month" ? "bg-yellow-500/20 text-yellow-400 border-yellow-500/30" : "bg-gray-500/20 text-gray-400 border-gray-500/30"}`}
+                          >
+                            {shop.plan === "yearly"
+                              ? " Gold"
+                              : shop.plan === "6-month"
+                                ? " Premium"
+                                : " Basic"}
+                          </span>
+                        </div>
+                        <p className="text-gray-500 text-xs">
+                          {shop.category} • {shop.productCount || 0} items
+                        </p>
+                      </div>
+                      <div className="text-cyan-400">
+                        <svg
+                          className="w-5 h-5"
+                          fill="none"
+                          stroke="currentColor"
+                          viewBox="0 0 24 24"
+                        >
+                          <path
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            strokeWidth={2}
+                            d="M9 5l7 7-7 7"
+                          />
+                        </svg>
+                      </div>
+                    </div>
+                  </Link>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ✅ TAB CONTENT: LISTINGS */}
         {activeTab === "listings" && (
           <div className="grid grid-cols-2 gap-3">
             {products.length === 0 ? (
@@ -561,7 +713,7 @@ export default function MyProfile() {
           </div>
         )}
 
-        {/* ✅ TAB CONTENT: SERVICES (Compact Grid) */}
+        {/* ✅ TAB CONTENT: SERVICES */}
         {activeTab === "services" && (
           <div className="grid grid-cols-2 gap-3">
             {services.length === 0 ? (
@@ -615,7 +767,7 @@ export default function MyProfile() {
         )}
       </div>
 
-      {/* 🔥 EDIT MODAL (Kept exactly as you had it) */}
+      {/* 🔥 EDIT MODAL */}
       {isEditing && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-[#151515] border border-gray-800 rounded-2xl p-6 max-w-2xl w-full max-h-[90vh] overflow-y-auto">
@@ -638,6 +790,28 @@ export default function MyProfile() {
                   }
                   className="w-full bg-[#1a1a1a] border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-400"
                 />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-xs text-gray-400 mb-1">
+                  Username (Public Display)
+                </label>
+                <input
+                  type="text"
+                  value={editData.username}
+                  onChange={(e) =>
+                    setEditData({
+                      ...editData,
+                      username: e.target.value
+                        .toLowerCase()
+                        .replace(/\s+/g, ""),
+                    })
+                  }
+                  className="w-full bg-[#1a1a1a] border border-gray-700 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-cyan-400"
+                  placeholder="@yourusername"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  This will be shown on your posts (no spaces allowed)
+                </p>
               </div>
               <div>
                 <label className="block text-xs text-gray-400 mb-1">

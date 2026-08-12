@@ -12,15 +12,11 @@ import {
 import { db, auth } from "../lib/firebase";
 
 export default function WithdrawalModal({ isOpen, onClose, userBalance }: any) {
-  const [step, setStep] = useState(1); // 1: Bank Details, 2: Amount
+  const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
-
-  // Bank States
   const [accountNumber, setAccountNumber] = useState("");
   const [bankName, setBankName] = useState("");
   const [accountName, setAccountName] = useState("");
-
-  // Withdrawal State
   const [amount, setAmount] = useState("");
 
   useEffect(() => {
@@ -36,7 +32,7 @@ export default function WithdrawalModal({ isOpen, onClose, userBalance }: any) {
       setAccountNumber(bank.accountNumber);
       setBankName(bank.bankName);
       setAccountName(bank.accountName);
-      setStep(2); // Skip to amount if bank details exist
+      setStep(2);
     } else {
       setStep(1);
     }
@@ -48,14 +44,13 @@ export default function WithdrawalModal({ isOpen, onClose, userBalance }: any) {
       return;
     }
 
-    // 🔥 THE SILENT LOCK: Save to user profile
     setLoading(true);
     try {
       await updateDoc(doc(db, "users", auth.currentUser!.uid), {
         bankDetails: { accountNumber, bankName, accountName },
-        isBankLocked: true, // Locks it forever!
+        isBankLocked: true,
       });
-      setStep(2); // Move to amount screen
+      setStep(2);
     } catch (err) {
       console.error(err);
       alert("Failed to save bank details.");
@@ -88,7 +83,17 @@ export default function WithdrawalModal({ isOpen, onClose, userBalance }: any) {
         userName: auth.currentUser!.displayName || "User",
         amount: withdrawAmount,
         bankDetails: { accountNumber, bankName, accountName },
-        status: "pending", // You will manually change this to "paid" later
+        status: "pending",
+        createdAt: serverTimestamp(),
+      });
+
+      // 🔥 LOG WITHDRAWAL REQUEST TRANSACTION
+      await addDoc(collection(db, "transactions"), {
+        userId: auth.currentUser!.uid,
+        type: "withdrawal",
+        amount: withdrawAmount,
+        description: `Withdrawal request to ${bankName}`,
+        status: "pending",
         createdAt: serverTimestamp(),
       });
 
@@ -178,14 +183,12 @@ export default function WithdrawalModal({ isOpen, onClose, userBalance }: any) {
                 {accountNumber} • {bankName}
               </p>
             </div>
-
             <div className="bg-[#1a1a1a] p-4 rounded-xl border border-gray-800">
               <p className="text-xs text-gray-400 mb-1">Available Balance:</p>
               <p className="text-2xl font-bold text-cyan-400">
                 ₦{userBalance.toLocaleString()}
               </p>
             </div>
-
             <input
               type="number"
               placeholder="Enter amount (Min ₦3,000 - Max ₦50,000)"
@@ -193,7 +196,6 @@ export default function WithdrawalModal({ isOpen, onClose, userBalance }: any) {
               onChange={(e) => setAmount(e.target.value)}
               className="w-full bg-[#1a1a1a] border border-gray-700 rounded-xl px-4 py-3 text-white focus:border-cyan-400 focus:outline-none"
             />
-
             <button
               onClick={handleWithdraw}
               disabled={loading}

@@ -2,7 +2,6 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import WalletBadge from "./WalletBadge";
 import { useRouter } from "next/navigation";
 import { auth, db } from "../lib/firebase";
 import { signOut, onAuthStateChanged } from "firebase/auth";
@@ -13,42 +12,35 @@ import {
   onSnapshot,
   doc,
   getDoc,
-  updateDoc, // 🔥 ADDED: Needed to auto-revoke expired verifications
+  updateDoc,
 } from "firebase/firestore";
+import WalletBadge from "./WalletBadge";
 
 export default function Navbar() {
   const router = useRouter();
   const [isOpen, setIsOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [unreadCount, setUnreadCount] = useState(0);
-  const [user, setUser] = useState(null);
+  const [user, setUser] = useState<any>(null);
 
-  // 🔔 REAL-TIME UNREAD NOTIFICATIONS COUNTER & USER FETCH
   useEffect(() => {
     const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
       if (currentUser) {
-        // 🔥 FETCH USER DATA to check if they are actually verified
         const userDoc = await getDoc(doc(db, "users", currentUser.uid));
         if (userDoc.exists()) {
           const userData = userDoc.data();
           let isCurrentlyVerified = userData.isVerified || false;
 
-          // 🔥 AUTO-EXPIRATION CHECK (The SaaS Magic)
           if (userData.isVerified && userData.subscriptionEnd) {
             const expiryDate = new Date(userData.subscriptionEnd);
             const today = new Date();
-
-            // If today is past the expiry date, revoke verification automatically!
             if (today > expiryDate) {
-              console.log("⚠️ Verification expired! Revoking access...");
               await updateDoc(doc(db, "users", currentUser.uid), {
                 isVerified: false,
               });
-              isCurrentlyVerified = false; // Update local state immediately
+              isCurrentlyVerified = false;
             }
           }
-
-          // Set the user with the updated (possibly revoked) status
           setUser({ ...userData, isVerified: isCurrentlyVerified });
         }
 
@@ -104,15 +96,12 @@ export default function Navbar() {
     <>
       {/* SLEEK TOP BAR */}
       <nav className="fixed top-0 w-full p-4 flex justify-between items-center z-50 bg-black/90 backdrop-blur-md border-b border-gray-800">
-        {/* LOGO */}
         <Link href="/" className="text-xl font-bold tracking-tight">
           You<span className="text-cyan-400">Chat</span>
         </Link>
 
-        {/* RIGHT SIDE ACTIONS */}
         <div className="flex items-center gap-3">
           {user ? (
-            // 🔥 SHOW THESE ONLY IF LOGGED IN
             <>
               <WalletBadge />
               <Link
@@ -156,7 +145,6 @@ export default function Navbar() {
               </button>
             </>
           ) : (
-            // 🔥 SHOW LOGIN BUTTON IF LOGGED OUT
             <Link
               href="/login"
               className="bg-cyan-500 text-black font-bold px-4 py-2 rounded-full text-sm hover:bg-cyan-400 transition"
@@ -167,12 +155,11 @@ export default function Navbar() {
         </div>
       </nav>
 
-      {/* 🔥 CLEAN, SCROLLABLE MOBILE MENU SIDEBAR */}
+      {/* MOBILE MENU SIDEBAR */}
       <div
         className={`fixed top-0 right-0 w-72 h-full bg-[#111] border-l border-gray-800 z-50 transform transition-transform duration-300 ease-in-out ${isOpen ? "translate-x-0" : "translate-x-full"}`}
       >
         <div className="flex flex-col h-full">
-          {/* Header with Close Button */}
           <div className="flex justify-between items-center p-6 border-b border-gray-800">
             <span className="text-lg font-bold text-white">Menu</span>
             <button
@@ -195,8 +182,7 @@ export default function Navbar() {
             </button>
           </div>
 
-          {/* Scrollable Menu Items */}
-          <div className="flex-1 overflow-y-auto p-4 space-y-2">
+          <div className="flex-1 overflow-y-auto p-4 space-y-1">
             <Link
               href="/"
               onClick={closeMenu}
@@ -205,7 +191,6 @@ export default function Navbar() {
               <span className="text-xl">🏠</span>{" "}
               <span className="font-medium">Home</span>
             </Link>
-
             <Link
               href="/profile"
               onClick={closeMenu}
@@ -214,7 +199,6 @@ export default function Navbar() {
               <span className="text-xl">👤</span>{" "}
               <span className="font-medium">Profile</span>
             </Link>
-
             <Link
               href="/messages"
               onClick={closeMenu}
@@ -228,7 +212,7 @@ export default function Navbar() {
               onClick={closeMenu}
               className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-white/10 transition text-white"
             >
-              <span className="text-xl">👥</span>
+              <span className="text-xl">👥</span>{" "}
               <span className="font-medium">Groups</span>
             </Link>
             <Link
@@ -247,6 +231,26 @@ export default function Navbar() {
               <span className="text-xl">🎁</span>{" "}
               <span className="font-medium">My Gifts</span>
             </Link>
+
+            {/* 🔥 FIXED REFER & EARN LINK */}
+            <Link
+              href="/refer"
+              onClick={closeMenu}
+              className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-white/10 transition text-white"
+            >
+              <span className="text-xl">🤝</span>{" "}
+              <span className="font-medium">Refer & Earn</span>
+            </Link>
+
+            <div className="border-t border-gray-700 my-3"></div>
+
+            <Link
+              href="/advertise"
+              onClick={closeMenu}
+              className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-yellow-500/10 transition text-yellow-400 font-semibold"
+            >
+              <span className="text-xl">📢</span> <span>Advertise</span>
+            </Link>
             <Link
               href="/settings"
               onClick={closeMenu}
@@ -264,7 +268,7 @@ export default function Navbar() {
               <span className="font-medium">Dark Mode</span>
             </button>
 
-            <div className="border-t border-gray-700 my-2"></div>
+            <div className="border-t border-gray-700 my-3"></div>
 
             <button
               onClick={handleShare}
@@ -274,18 +278,8 @@ export default function Navbar() {
               <span className="font-medium">Invite Friends</span>
             </button>
 
-            <Link
-              href="/advertise"
-              onClick={closeMenu}
-              className="flex items-center gap-3 px-4 py-3 rounded-xl hover:bg-white/10 transition text-white"
-            >
-              <span className="text-xl">📢</span>{" "}
-              <span className="font-medium">Advertise</span>
-            </Link>
-
             <div className="border-t border-gray-700 my-4"></div>
 
-            {/* 🔥 CONDITIONAL VERIFICATION BADGE / BUTTON */}
             {user?.isVerified ? (
               <div className="bg-cyan-500/10 border border-cyan-500 rounded-lg p-3 flex items-center gap-2">
                 <svg
@@ -316,7 +310,6 @@ export default function Navbar() {
             )}
           </div>
 
-          {/* Logout Button at the bottom */}
           <div className="p-4 border-t border-gray-800">
             <button
               onClick={handleLogout}
@@ -328,7 +321,6 @@ export default function Navbar() {
         </div>
       </div>
 
-      {/* OVERLAY TO CLOSE MENU */}
       {isOpen && (
         <div
           className="fixed inset-0 bg-black/50 backdrop-blur-sm z-40"

@@ -15,29 +15,31 @@ import {
   serverTimestamp,
   updateDoc,
   setDoc,
-  deleteDoc, // 🔥 ADDED for removing members
+  deleteDoc,
   arrayUnion,
   arrayRemove,
+  onSnapshot, // 🔥 ADDED FOR REAL-TIME FEED
 } from "firebase/firestore";
-import { db, auth } from "../../lib/firebase";
-import { onAuthStateChanged, type User } from "firebase/auth";
+import { db, auth } from "../../lib/firebase"; // Adjust path if needed
+import { onAuthStateChanged } from "firebase/auth";
 import Link from "next/link";
 
 export default function GroupPage() {
   const { id } = useParams();
   const router = useRouter();
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<any>(null);
   const [group, setGroup] = useState<any>(null);
   const [posts, setPosts] = useState<any[]>([]);
   const [userRole, setUserRole] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [members, setMembers] = useState<any[]>([]);
-  const [showMembersModal, setShowMembersModal] = useState(false);
 
   // Modals & Forms
+  const [showMembersModal, setShowMembersModal] = useState(false);
   const [showPostModal, setShowPostModal] = useState(false);
   const [showJoinModal, setShowJoinModal] = useState(false);
   const [showAddMemberModal, setShowAddMemberModal] = useState(false);
+
   const [newPostContent, setNewPostContent] = useState("");
   const [isPinned, setIsPinned] = useState(false);
   const [isAnnouncement, setIsAnnouncement] = useState(false);
@@ -48,16 +50,16 @@ export default function GroupPage() {
   const [likedPosts, setLikedPosts] = useState<Set<string>>(new Set());
   const [showCommentsFor, setShowCommentsFor] = useState<string | null>(null);
   const [commentText, setCommentText] = useState("");
-  const [postAuthors, setPostAuthors] = useState<any>({});
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
-  const [activeMenuId, setActiveMenuId] = useState<string | null>(null); // For admin dropdown
+  const [activeMenuId, setActiveMenuId] = useState<string | null>(null);
 
+  // 1. AUTH & INITIAL GROUP DATA
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       if (currentUser) {
         setUser(currentUser);
-        fetchGroupData(currentUser.uid);
+        fetchInitialGroupData(currentUser.uid);
       } else {
         router.push("/login");
       }
@@ -65,32 +67,7 @@ export default function GroupPage() {
     return () => unsubscribe();
   }, [id, router]);
 
-  useEffect(() => {
-    const fetchAuthors = async () => {
-      const authorsData: any = {};
-      for (const post of posts) {
-        if (post.authorId && !authorsData[post.authorId]) {
-          try {
-            const userDoc = await getDoc(doc(db, "users", post.authorId));
-            if (userDoc.exists()) {
-              const data = userDoc.data();
-              authorsData[post.authorId] =
-                data.fullName ||
-                data.username ||
-                data.email?.split("@")[0] ||
-                "User";
-            }
-          } catch (err) {
-            console.error("Error fetching author:", err);
-          }
-        }
-      }
-      setPostAuthors(authorsData);
-    };
-    if (posts.length > 0) fetchAuthors();
-  }, [posts]);
-
-  const fetchGroupData = async (uid: string) => {
+  const fetchInitialGroupData = async (uid: string) => {
     if (!id) return;
     setLoading(true);
     try {
@@ -103,39 +80,55 @@ export default function GroupPage() {
         setUserRole(memberDoc.exists() ? memberDoc.data().role : null);
       }
 
-      // 🔥 FETCH MEMBERS AND THEIR REAL PROFILES
+      // 🔥 SENIOR FIX: Use cached userName/userAvatar from subcollection to save 50+ database reads!
       const membersQuery = query(
         collection(db, "groups", id as string, "members"),
       );
       const membersSnapshot = await getDocs(membersQuery);
 
-      const membersData = [];
-      for (const docSnap of membersSnapshot.docs) {
-        const memberInfo = docSnap.data();
-        // Fetch real user data from main 'users' collection
-        const userDoc = await getDoc(doc(db, "users", memberInfo.userId));
-        if (userDoc.exists()) {
-          membersData.push({
-            id: docSnap.id,
-            ...memberInfo,
-            ...userDoc.data(), // Merges fullName, avatar, etc.
-          });
-        }
-      }
+      const membersData = membersSnapshot.docs.map((docSnap) => {
+        const data = docSnap.data();
+        return {
+          id: docSnap.id,
+          userId: data.userId,
+          role: data.role,
+          fullName: data.userName || "User", // Use cached name
+          avatar: data.userAvatar || null, // Use cached avatar
+        };
+      });
       setMembers(membersData);
-
-      const postsQuery = query(
-        collection(db, "feed"),
-        where("groupId", "==", id),
-        orderBy("createdAt", "desc"),
-        limit(50),
+    } catch (err) {
+      console.error("Error fetching group data:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+  // 🔥 RESET UNREAD COUNT WHEN USER OPENS THE GROUP
+  useEffect(() => {
+    if (user && group) {
+      updateDoc(doc(db, "users", user.uid), { totalGroupUnread: 0 }).catch(
+        (err) => console.error("Error resetting group unread:", err),
       );
-      const postsSnapshot = await getDocs(postsQuery);
-      const postsData = postsSnapshot.docs.map((doc) => ({
+    }
+  }, [user, group]);
+  // 2. 🔥 REAL-TIME POSTS LISTENER (No more refreshing to see new posts!)
+  useEffect(() => {
+    if (!id) return;
+
+    const postsQuery = query(
+      collection(db, "feed"),
+      where("groupId", "==", id),
+      orderBy("createdAt", "desc"),
+      limit(50),
+    );
+
+    const postsUnsubscribe = onSnapshot(postsQuery, (snapshot) => {
+      const postsData = snapshot.docs.map((doc) => ({
         id: doc.id,
         ...doc.data(),
       }));
 
+      // Sort: Announcements first, then Pinned, then by date
       postsData.sort((a, b) => {
         if (a.isAnnouncement && !b.isAnnouncement) return -1;
         if (!a.isAnnouncement && b.isAnnouncement) return 1;
@@ -144,12 +137,10 @@ export default function GroupPage() {
         return 0;
       });
       setPosts(postsData);
-    } catch (err) {
-      console.error("Error fetching group data:", err);
-    } finally {
-      setLoading(false);
-    }
-  };
+    });
+
+    return () => postsUnsubscribe();
+  }, [id]);
 
   const handleJoinRequest = async () => {
     if (!user || !group) return;
@@ -161,23 +152,17 @@ export default function GroupPage() {
         role,
         joinedAt: serverTimestamp(),
         notificationsEnabled: true,
+        userName: user.displayName || user.email?.split("@")[0],
+        userAvatar: null,
       });
-      // 🔥 NOTIFY ADMIN FOR BOTH PRIVATE AND SECRET GROUPS
+
       if (group.privacy === "private" || group.privacy === "secret") {
-        const userDoc = await getDoc(doc(db, "users", user.uid));
-        const userData = userDoc.exists() ? userDoc.data() : {};
-
-        // 🔥 GRAB THE REAL NAME SAFELY
         const actorName =
-          userData.fullName ||
-          userData.username ||
-          user.email?.split("@")[0] ||
-          "Someone";
-
+          user.displayName || user.email?.split("@")[0] || "Someone";
         await addDoc(collection(db, "notifications"), {
           userId: group.createdBy,
           actorUid: user.uid,
-          actorName: actorName, // 🔥 THIS IS WHAT THE NOTIFICATIONS PAGE READS
+          actorName: actorName,
           type: "group_join_request",
           groupId: group.id,
           groupName: group.name,
@@ -188,7 +173,8 @@ export default function GroupPage() {
       }
       setUserRole(role);
       setShowJoinModal(false);
-      fetchGroupData(user.uid);
+      // Refresh members list
+      fetchInitialGroupData(user.uid);
     } catch (err) {
       console.error("Error joining group:", err);
       alert("Failed to join group");
@@ -223,16 +209,20 @@ export default function GroupPage() {
         likes: 0,
         commentsList: [],
       });
+
+      // 🔥 NEW: Update the group's lastActivity so it pops to the top of the list!
+      await updateDoc(doc(db, "groups", group.id), {
+        lastActivity: serverTimestamp(),
+      });
+
       setNewPostContent("");
       setIsPinned(false);
       setIsAnnouncement(false);
       setShowPostModal(false);
-      fetchGroupData(user.uid);
     } catch (err) {
       console.error("Error creating post:", err);
     }
   };
-
   const handleLikePost = async (postId: string, currentLikes: number) => {
     if (!user) return;
     const postRef = doc(db, "feed", postId);
@@ -286,23 +276,20 @@ export default function GroupPage() {
       await updateDoc(doc(db, "groups", group.id, "members", memberId), {
         role: "admin",
       });
-      alert("User promoted to Admin!");
-      fetchGroupData(user?.uid || "");
+      fetchInitialGroupData(user?.uid || "");
       setActiveMenuId(null);
     } catch (err) {
       console.error(err);
-      alert("Failed to update role");
     }
   };
 
   const handleDemoteAdmin = async (memberId: string) => {
-    if (!confirm("Remove Admin status from this user?")) return;
+    if (!confirm("Remove Admin status?")) return;
     try {
       await updateDoc(doc(db, "groups", group.id, "members", memberId), {
         role: "member",
       });
-      alert("User demoted to Member.");
-      fetchGroupData(user?.uid || "");
+      fetchInitialGroupData(user?.uid || "");
       setActiveMenuId(null);
     } catch (err) {
       console.error(err);
@@ -310,11 +297,9 @@ export default function GroupPage() {
   };
 
   const handleRemoveMember = async (memberId: string) => {
-    if (!confirm("Are you sure you want to remove this user from the group?"))
-      return;
+    if (!confirm("Remove this user from the group?")) return;
     try {
       await deleteDoc(doc(db, "groups", group.id, "members", memberId));
-      // Decrement count
       const groupRef = doc(db, "groups", group.id);
       const groupDoc = await getDoc(groupRef);
       if (groupDoc.exists()) {
@@ -322,12 +307,10 @@ export default function GroupPage() {
           memberCount: Math.max(0, (groupDoc.data().memberCount || 1) - 1),
         });
       }
-      alert("User removed from group.");
-      fetchGroupData(user?.uid || "");
+      fetchInitialGroupData(user?.uid || "");
       setActiveMenuId(null);
     } catch (err) {
       console.error(err);
-      alert("Failed to remove user");
     }
   };
 
@@ -337,6 +320,7 @@ export default function GroupPage() {
         <div className="w-10 h-10 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin"></div>
       </div>
     );
+
   if (!group)
     return (
       <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center text-white">
@@ -357,6 +341,7 @@ export default function GroupPage() {
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] text-white pb-20">
+      {/* COVER & HEADER */}
       <div className="relative h-48 md:h-64 bg-gradient-to-r from-purple-600 to-cyan-600 overflow-hidden">
         {group.coverPhoto && (
           <img src={group.coverPhoto} className="w-full h-full object-cover" />
@@ -394,12 +379,12 @@ export default function GroupPage() {
       </div>
 
       <div className="max-w-2xl mx-auto px-4 py-6">
+        {/* GROUP INFO & JOIN ACTIONS */}
         <div className="bg-[#111] border border-gray-800 rounded-xl p-4 mb-6">
           <p className="text-gray-300 mb-3">{group.description}</p>
           {isAdmin && group.privacy === "secret" && group.inviteCode && (
             <div className="mb-4 bg-red-500/10 border border-red-500/30 rounded-xl p-4">
               <p className="text-red-400 text-xs font-bold uppercase mb-2 tracking-wider">
-                {" "}
                 Admin: Secret Invite Code
               </p>
               <div className="flex items-center gap-2">
@@ -409,7 +394,7 @@ export default function GroupPage() {
                 <button
                   onClick={() => {
                     navigator.clipboard.writeText(group.inviteCode);
-                    alert("Copied! ");
+                    alert("Copied!");
                   }}
                   className="bg-red-500 hover:bg-red-400 text-white px-4 py-2 rounded-lg font-bold text-sm transition"
                 >
@@ -449,12 +434,12 @@ export default function GroupPage() {
           )}
           {isPending && (
             <div className="mt-4 bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-3 text-center text-yellow-400 text-sm font-semibold">
-              {" "}
               Request pending admin approval.
             </div>
           )}
         </div>
 
+        {/* FEED HEADER */}
         <div className="mb-4 flex justify-between items-center">
           <h2 className="text-xl font-bold">Group Feed</h2>
           <div className="flex gap-2">
@@ -477,6 +462,7 @@ export default function GroupPage() {
           </div>
         </div>
 
+        {/* POSTS FEED */}
         {!isMember && !isAdmin ? (
           <div className="text-center py-20 bg-[#111] border border-gray-800 rounded-2xl">
             <p className="text-gray-400 mb-4">Join this group to see posts.</p>
@@ -488,8 +474,7 @@ export default function GroupPage() {
         ) : (
           <div className="space-y-4">
             {posts.map((post) => {
-              const authorName =
-                postAuthors[post.authorId] || post.authorName || "Unknown";
+              const authorName = post.authorName || "Unknown";
               const isLiked = likedPosts.has(post.id);
               const showComments = showCommentsFor === post.id;
               return (
@@ -593,7 +578,7 @@ export default function GroupPage() {
         )}
       </div>
 
-      {/* 🔥 MEMBERS MODAL WITH ADMIN CONTROLS */}
+      {/* 🔥 MEMBERS MODAL */}
       {showMembersModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-[#151515] border border-gray-800 rounded-2xl p-6 max-w-md w-full max-h-[80vh] overflow-y-auto">
@@ -635,15 +620,13 @@ export default function GroupPage() {
                       </div>
                       <div>
                         <p className="font-semibold text-sm">
-                          {member.fullName || member.username || "User"}
+                          {member.fullName}
                         </p>
                         <p className="text-gray-500 text-xs capitalize">
                           {member.role}
                         </p>
                       </div>
                     </div>
-
-                    {/* 🔥 ADMIN ACTIONS MENU */}
                     {isAdmin && !isSelf && (
                       <div className="relative">
                         <button
@@ -691,7 +674,6 @@ export default function GroupPage() {
                         )}
                       </div>
                     )}
-
                     {member.role === "admin" && (
                       <span className="text-xs bg-cyan-500/20 text-cyan-400 px-2 py-1 rounded-full ml-2">
                         Admin
@@ -826,7 +808,7 @@ export default function GroupPage() {
         </div>
       )}
 
-      {/* ADD MEMBER MODAL (Admin Only) */}
+      {/* ADD MEMBER MODAL */}
       {showAddMemberModal && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
           <div className="bg-[#151515] border border-gray-800 rounded-2xl p-6 max-w-lg w-full max-h-[80vh] overflow-y-auto">
@@ -837,20 +819,19 @@ export default function GroupPage() {
               onChange={async (e) => {
                 setSearchQuery(e.target.value);
                 if (e.target.value.length > 2) {
-                  const usersQuery = query(collection(db, "users"), limit(20));
+                  // Note: For production, consider using Algolia or a dedicated search index.
+                  // This fetches 50 users and filters client-side for better results.
+                  const usersQuery = query(collection(db, "users"), limit(50));
                   const snapshot = await getDocs(usersQuery);
                   const users = snapshot.docs
-                    .filter(
-                      (doc) =>
-                        doc
-                          .data()
-                          .fullName?.toLowerCase()
-                          .includes(e.target.value.toLowerCase()) ||
-                        doc
-                          .data()
-                          .username?.toLowerCase()
-                          .includes(e.target.value.toLowerCase()),
-                    )
+                    .filter((doc) => {
+                      const data = doc.data();
+                      const searchLower = e.target.value.toLowerCase();
+                      return (
+                        data.fullName?.toLowerCase().includes(searchLower) ||
+                        data.username?.toLowerCase().includes(searchLower)
+                      );
+                    })
                     .map((doc) => ({ id: doc.id, ...doc.data() }));
                   setSearchResults(users);
                 } else {
@@ -896,7 +877,7 @@ export default function GroupPage() {
                         },
                       );
                       alert(`Added ${u.fullName}!`);
-                      fetchGroupData(user?.uid || "");
+                      fetchInitialGroupData(user?.uid || "");
                       setShowAddMemberModal(false);
                     }}
                     className="bg-cyan-500 text-black px-3 py-1 rounded-lg text-sm font-bold"

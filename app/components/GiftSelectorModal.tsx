@@ -28,12 +28,15 @@ const GIFT_CATALOG = [
   { id: "handouts", name: "Handouts", icon: "📚", price: 1000, coins: 100 },
   { id: "health", name: "Health", icon: "💊", price: 1000, coins: 100 },
   { id: "fuel", name: "Generator Fuel", icon: "⛽", price: 2000, coins: 200 },
+  { id: "allowance", name: "Allowance", icon: "💲", price: 5000, coins: 500 },
+  { id: "support", name: "Support", icon: "🎁", price: 10000, coins: 1000 },
+  { id: "rent", name: "Rent", icon: "🏡", price: 20000, coins: 2000 },
   {
     id: "schoolfees",
     name: "School Fees",
     icon: "💵",
-    price: 5000,
-    coins: 500,
+    price: 50000,
+    coins: 5000,
   },
   { id: "laptop", name: "Laptop", icon: "💻", price: 70000, coins: 7000 },
   {
@@ -92,20 +95,41 @@ export default function GiftSelectorModal({
         ? "Anonymous Supporter"
         : auth.currentUser.displayName || "A Supporter";
 
-      // 1. 🔥 CRITICAL FIX: Deduct BOTH coins AND the Naira value from sender
+      // 1. Deduct BOTH coins AND the Naira value from sender
       await updateDoc(doc(db, "users", senderId), {
         coinBalance: increment(-gift.coins),
-        walletBalance: increment(-gift.price), // Deduct the actual cash value!
+        walletBalance: increment(-gift.price),
       });
-      setUserCoins((prev) => prev - gift.coins); // Instant UI update
+      setUserCoins((prev) => prev - gift.coins);
 
-      // 2. Add 70% CASH to the recipient's wallet (They withdraw cash, not coins!)
+      // 🔥 LOG SENDER TRANSACTION
+      await addDoc(collection(db, "transactions"), {
+        userId: senderId,
+        type: "gift_sent",
+        amount: gift.price,
+        coins: gift.coins,
+        description: `Sent ${gift.name} to ${recipientName}`,
+        status: "completed",
+        createdAt: serverTimestamp(),
+      });
+
+      // 2. Add 70% CASH to the recipient's wallet
       const creatorEarnings = gift.price * 0.7;
       await updateDoc(doc(db, "users", recipientId), {
         walletBalance: increment(creatorEarnings),
       });
 
-      // 3. 🔥 ADD +1 GIFT COUNT TO THE SPECIFIC POST
+      // 🔥 LOG RECEIVER TRANSACTION
+      await addDoc(collection(db, "transactions"), {
+        userId: recipientId,
+        type: "gift_received",
+        amount: creatorEarnings,
+        description: `Received ${gift.name} from ${senderName}`,
+        status: "completed",
+        createdAt: serverTimestamp(),
+      });
+
+      // 3. ADD +1 GIFT COUNT TO THE SPECIFIC POST
       if (postId) {
         await updateDoc(doc(db, "feed", postId), {
           giftCount: increment(1),
@@ -128,6 +152,7 @@ export default function GiftSelectorModal({
       });
 
       // 5. Notifications
+      // Notification for the Receiver
       await addDoc(collection(db, "notifications"), {
         userId: recipientId,
         actorUid: senderId,
@@ -137,15 +162,15 @@ export default function GiftSelectorModal({
         createdAt: serverTimestamp(),
       });
 
+      // 🔥 FIXED: Notification for the Sender (Point actorUid to senderId)
       await addDoc(collection(db, "notifications"), {
         userId: senderId,
-        actorUid: recipientId,
+        actorUid: senderId, // ✅ Changed from recipientId to senderId
         type: "gift_sent",
         message: `You successfully sent a ${gift.icon} ${gift.name} to ${recipientName}.`,
         read: false,
         createdAt: serverTimestamp(),
       });
-
       alert(`🎉 You sent a ${gift.icon} ${gift.name} to ${recipientName}!`);
       onClose();
     } catch (err) {
@@ -212,11 +237,7 @@ export default function GiftSelectorModal({
                 key={gift.id}
                 onClick={() => handleSelectGift(gift)}
                 disabled={sending || !canAfford}
-                className={`flex flex-col items-center p-3 rounded-2xl border transition-all ${
-                  canAfford
-                    ? "bg-[#1a1a1a] border-gray-700 hover:border-cyan-400 hover:scale-105 active:scale-95"
-                    : "bg-[#111] border-gray-800 opacity-50 cursor-not-allowed"
-                }`}
+                className={`flex flex-col items-center p-3 rounded-2xl border transition-all ${canAfford ? "bg-[#1a1a1a] border-gray-700 hover:border-cyan-400 hover:scale-105 active:scale-95" : "bg-[#111] border-gray-800 opacity-50 cursor-not-allowed"}`}
               >
                 <div className="text-4xl mb-2">{gift.icon}</div>
                 <p className="text-white text-xs font-semibold text-center leading-tight mb-1">

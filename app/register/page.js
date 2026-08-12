@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import {
   createUserWithEmailAndPassword,
@@ -13,24 +13,47 @@ import {
   getDocs,
   doc,
   setDoc,
+  updateDoc,
+  increment,
+  addDoc,
+  serverTimestamp,
 } from "firebase/firestore";
+import { useSearchParams } from "next/navigation";
 import { auth, db } from "../lib/firebase";
 import Link from "next/link";
+
+// 🔥 GLOBAL COUNTRY CODES (Self-learning - users can add custom ones)
+const POPULAR_COUNTRY_CODES = [
+  { country: "Nigeria", code: "+234", flag: "🇳🇬" },
+  { country: "Ghana", code: "+233", flag: "🇬🇭" },
+  { country: "Kenya", code: "+254", flag: "🇰🇪" },
+  { country: "South Africa", code: "+27", flag: "🇿🇦" },
+  { country: "USA", code: "+1", flag: "🇺🇸" },
+  { country: "UK", code: "+44", flag: "🇬🇧" },
+  { country: "Canada", code: "+1", flag: "🇦" },
+  { country: "Egypt", code: "+20", flag: "🇪🇬" },
+  { country: "India", code: "+91", flag: "🇮🇳" },
+  { country: "Other", code: "custom", flag: "" },
+];
 
 export default function Register() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const searchParams = useSearchParams();
+  const referralCodeFromUrl = searchParams.get("ref");
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [customCountryCode, setCustomCountryCode] = useState("");
+  const [userCountry, setUserCountry] = useState("");
 
   const [formData, setFormData] = useState({
     fullName: "",
+    username: "",
     email: "",
     countryCode: "+234",
     phoneNumber: "",
-    studentId: "",
     password: "",
     confirmPassword: "",
   });
@@ -56,22 +79,35 @@ export default function Register() {
       return;
     }
 
+    // 3. Validate username
+    if (formData.username.length < 3) {
+      setError("Username must be at least 3 characters.");
+      return;
+    }
+
     setLoading(true);
 
     try {
-      // 3. CHECK FOR DUPLICATE ACCOUNTS (Student ID or Phone)
+      // 4. CHECK FOR DUPLICATE ACCOUNTS
       const usersRef = collection(db, "users");
 
-      // Check Student ID
-      const studentIdQuery = query(
+      // Check Email
+      const emailQuery = query(usersRef, where("email", "==", formData.email));
+      const emailSnapshot = await getDocs(emailQuery);
+      if (!emailSnapshot.empty) {
+        setError("This email is already registered. Please log in.");
+        setLoading(false);
+        return;
+      }
+
+      // Check Username
+      const usernameQuery = query(
         usersRef,
-        where("studentId", "==", formData.studentId),
+        where("username", "==", formData.username),
       );
-      const studentIdSnapshot = await getDocs(studentIdQuery);
-      if (!studentIdSnapshot.empty) {
-        setError(
-          "This Student ID is already registered. Please log in or use 'Forgot Password'.",
-        );
+      const usernameSnapshot = await getDocs(usernameQuery);
+      if (!usernameSnapshot.empty) {
+        setError("This username is already taken. Please choose another.");
         setLoading(false);
         return;
       }
@@ -88,7 +124,7 @@ export default function Register() {
         return;
       }
 
-      // 4. Create the user in Firebase Authentication
+      // 5. Create the user in Firebase Authentication
       const userCredential = await createUserWithEmailAndPassword(
         auth,
         formData.email,
@@ -96,22 +132,87 @@ export default function Register() {
       );
       const user = userCredential.user;
 
-      // 5. Send the verification email automatically
-      await sendEmailVerification(user);
+      // 6. Generate unique referral code
+      const referralCode = user.uid.substring(0, 8).toUpperCase();
 
-      // 6. Save details in Firestore
+      // 7. Save details in Firestore
       await setDoc(doc(db, "users", user.uid), {
         fullName: formData.fullName,
+        username: formData.username,
         email: formData.email,
         phoneNumber: formData.phoneNumber,
-        studentId: formData.studentId,
+        countryCode:
+          formData.countryCode === "custom"
+            ? customCountryCode
+            : formData.countryCode,
+        country: userCountry,
+        referralCode: referralCode,
+        totalReferrals: 0,
+        referredBy: null,
+        coinBalance: 0,
+        walletBalance: 0,
         isEmailVerified: false,
-        createdAt: new Date().toISOString(),
+        profileLockedUntil: null, // Will be set after first edit
+        createdAt: serverTimestamp(),
         followers: [],
         following: [],
       });
 
-      // 7. Success! Redirect them to login
+      // 8. PROCESS REFERRAL IF EXISTS
+      if (referralCodeFromUrl) {
+        const referrerQuery = query(
+          collection(db, "users"),
+          where("referralCode", "==", referralCodeFromUrl),
+        );
+        const referrerSnapshot = await getDocs(referrerQuery);
+
+        if (!referrerSnapshot.empty) {
+          const referrerDoc = referrerSnapshot.docs[0];
+          const referrerId = referrerDoc.id;
+
+          // Reward the NEW user (100 coins)
+          await updateDoc(doc(db, "users", user.uid), {
+            coinBalance: increment(100),
+            referredBy: referrerId,
+          });
+
+          // Reward the REFERRER (100 coins + increment count)
+          await updateDoc(doc(db, "users", referrerId), {
+            coinBalance: increment(100),
+            totalReferrals: increment(1),
+          });
+
+          // Log the referral transaction for referrer
+          await addDoc(collection(db, "transactions"), {
+            userId: referrerId,
+            type: "referral_reward",
+            amount: 0,
+            coins: 100,
+            description: `Earned 100 coins from referring a friend`,
+            status: "completed",
+            createdAt: serverTimestamp(),
+          });
+
+          // Log for the new user
+          await addDoc(collection(db, "transactions"), {
+            userId: user.uid,
+            type: "referral_bonus",
+            amount: 0,
+            coins: 100,
+            description: `Received 100 coins signup bonus from referral`,
+            status: "completed",
+            createdAt: serverTimestamp(),
+          });
+        }
+      }
+
+      // 9. Send the verification email
+      await sendEmailVerification(user);
+
+      // 10. Success! Redirect them
+      alert(
+        "✅ Account created successfully! Please check your email to verify your account.",
+      );
       router.push("/login");
     } catch (err) {
       console.error("Signup error:", err);
@@ -138,7 +239,7 @@ export default function Register() {
           </Link>
           <h2 className="text-2xl font-bold mt-4">Create Your Account</h2>
           <p className="text-gray-400 text-sm mt-2">
-            Join the ultimate campus network.
+            Join students and creators worldwide. 🌍
           </p>
         </div>
 
@@ -149,9 +250,10 @@ export default function Register() {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {/* Full Name */}
           <div>
             <label className="block text-sm text-gray-400 mb-1">
-              Full Name
+              Full Name (For Withdrawals)
             </label>
             <input
               type="text"
@@ -159,10 +261,31 @@ export default function Register() {
               value={formData.fullName}
               onChange={handleChange}
               className="w-full bg-[#1a1a1a] border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-cyan-400 transition"
+              placeholder="John Doe"
               required
             />
           </div>
 
+          {/* Username */}
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">
+              Username (Public Display)
+            </label>
+            <input
+              type="text"
+              name="username"
+              value={formData.username}
+              onChange={handleChange}
+              className="w-full bg-[#1a1a1a] border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-cyan-400 transition"
+              placeholder="@johndoe"
+              required
+            />
+            <p className="text-xs text-gray-500 mt-1">
+              This will be shown publicly on your posts
+            </p>
+          </div>
+
+          {/* Email */}
           <div>
             <label className="block text-sm text-gray-400 mb-1">
               Email Address
@@ -173,10 +296,25 @@ export default function Register() {
               value={formData.email}
               onChange={handleChange}
               className="w-full bg-[#1a1a1a] border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-cyan-400 transition"
+              placeholder="john@example.com"
               required
             />
           </div>
 
+          {/* Country */}
+          <div>
+            <label className="block text-sm text-gray-400 mb-1">Country</label>
+            <input
+              type="text"
+              value={userCountry}
+              onChange={(e) => setUserCountry(e.target.value)}
+              className="w-full bg-[#1a1a1a] border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-cyan-400 transition"
+              placeholder="Nigeria"
+              required
+            />
+          </div>
+
+          {/* Phone Number */}
           <div>
             <label className="block text-sm text-gray-400 mb-1">
               Phone Number
@@ -188,13 +326,21 @@ export default function Register() {
                 onChange={handleChange}
                 className="bg-[#1a1a1a] border border-gray-700 rounded-lg px-3 py-3 text-white focus:outline-none focus:border-cyan-400 transition w-28"
               >
-                <option value="+234">🇳🇬 +234</option>
-                <option value="+1">🇺🇸 +1</option>
-                <option value="+254">🇰🇪 +254</option>
-                <option value="+27">🇿🇦 +27</option>
-                <option value="+233">🇬🇭 +233</option>
-                <option value="+20">🇪🇬 +20</option>
+                {POPULAR_COUNTRY_CODES.map((c, index) => (
+                  <option key={`${c.code}-${index}`} value={c.code}>
+                    {c.flag} {c.country} ({c.code})
+                  </option>
+                ))}
               </select>
+              {formData.countryCode === "custom" && (
+                <input
+                  type="text"
+                  value={customCountryCode}
+                  onChange={(e) => setCustomCountryCode(e.target.value)}
+                  placeholder="+234"
+                  className="w-24 bg-[#1a1a1a] border border-gray-700 rounded-lg px-2 py-3 text-white focus:outline-none focus:border-cyan-400 text-center"
+                />
+              )}
               <input
                 type="tel"
                 name="phoneNumber"
@@ -205,22 +351,12 @@ export default function Register() {
                 required
               />
             </div>
+            <p className="text-xs text-gray-500 mt-1">
+              📱 Additional charges may apply for SMS verification
+            </p>
           </div>
 
-          <div>
-            <label className="block text-sm text-gray-400 mb-1">
-              Student ID / Matric Number
-            </label>
-            <input
-              type="text"
-              name="studentId"
-              value={formData.studentId}
-              onChange={handleChange}
-              className="w-full bg-[#1a1a1a] border border-gray-700 rounded-lg px-4 py-3 text-white focus:outline-none focus:border-cyan-400 transition"
-              required
-            />
-          </div>
-
+          {/* Password */}
           <div className="relative">
             <label className="block text-sm text-gray-400 mb-1">Password</label>
             <input
@@ -236,40 +372,11 @@ export default function Register() {
               onClick={() => setShowPassword(!showPassword)}
               className="absolute right-3 top-9 text-gray-400 hover:text-white"
             >
-              {showPassword ? (
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
-                  <line x1="1" y1="1" x2="23" y2="23" />
-                </svg>
-              ) : (
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                  <circle cx="12" cy="12" r="3" />
-                </svg>
-              )}
+              {showPassword ? "" : "👁️"}
             </button>
           </div>
 
+          {/* Confirm Password */}
           <div className="relative">
             <label className="block text-sm text-gray-400 mb-1">
               Confirm Password
@@ -287,40 +394,11 @@ export default function Register() {
               onClick={() => setShowConfirmPassword(!showConfirmPassword)}
               className="absolute right-3 top-9 text-gray-400 hover:text-white"
             >
-              {showConfirmPassword ? (
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
-                  <line x1="1" y1="1" x2="23" y2="23" />
-                </svg>
-              ) : (
-                <svg
-                  xmlns="http://www.w3.org/2000/svg"
-                  width="20"
-                  height="20"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-                  <circle cx="12" cy="12" r="3" />
-                </svg>
-              )}
+              {showConfirmPassword ? "🙈" : "👁️"}
             </button>
           </div>
 
+          {/* Submit Button */}
           <button
             type="submit"
             disabled={loading}
