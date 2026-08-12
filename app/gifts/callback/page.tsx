@@ -1,18 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { auth } from "../../lib/firebase";
 
 export default function PaymentCallback() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [status, setStatus] = useState("Verifying transaction securely...");
   const [isProcessing, setIsProcessing] = useState(true);
 
   useEffect(() => {
     const processPayment = async () => {
-      const reference = searchParams.get("reference");
+      // 🔥 WE ARE USING WINDOW.LOCATION, NOT useSearchParams!
+      const urlParams = new URLSearchParams(window.location.search);
+      const reference = urlParams.get("reference");
 
       if (!reference) {
         setStatus("❌ Invalid payment link.");
@@ -21,7 +22,6 @@ export default function PaymentCallback() {
         return;
       }
 
-      // Wait briefly for auth to initialize
       const user = await new Promise((resolve) => {
         const unsubscribe = auth.onAuthStateChanged((currentUser) => {
           unsubscribe();
@@ -43,13 +43,12 @@ export default function PaymentCallback() {
       try {
         setStatus("✅ Contacting Paystack server...");
 
-        // 🔥 Call our SECURE API route (The API handles the database update safely!)
         const res = await fetch(`/api/paystack/verify?reference=${reference}`);
         const data = await res.json();
 
         if (data.status && data.data && data.data.status === "success") {
-          const amountPaid = data.data.amount / 100; // Convert kobo to Naira
-          const coinsToAdd = amountPaid / 10; // ₦10 = 1 coin (Adjust if your ratio is different)
+          const amountPaid = data.data.amount / 100;
+          const coinsToAdd = amountPaid / 10;
 
           setStatus(`🎉 Success! ${coinsToAdd} coins added to your wallet.`);
           setIsProcessing(false);
@@ -71,7 +70,7 @@ export default function PaymentCallback() {
     };
 
     processPayment();
-  }, [searchParams, router]);
+  }, [router]);
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] flex flex-col items-center justify-center text-white">
