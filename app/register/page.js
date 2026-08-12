@@ -18,11 +18,10 @@ import {
   addDoc,
   serverTimestamp,
 } from "firebase/firestore";
-import { useSearchParams } from "next/navigation";
 import { auth, db } from "../lib/firebase";
 import Link from "next/link";
 
-// 🔥 GLOBAL COUNTRY CODES (Self-learning - users can add custom ones)
+// 🔥 GLOBAL COUNTRY CODES
 const POPULAR_COUNTRY_CODES = [
   { country: "Nigeria", code: "+234", flag: "🇳🇬" },
   { country: "Ghana", code: "+233", flag: "🇬🇭" },
@@ -30,7 +29,7 @@ const POPULAR_COUNTRY_CODES = [
   { country: "South Africa", code: "+27", flag: "🇿🇦" },
   { country: "USA", code: "+1", flag: "🇺🇸" },
   { country: "UK", code: "+44", flag: "🇬🇧" },
-  { country: "Canada", code: "+1", flag: "🇦" },
+  { country: "Canada", code: "+1", flag: "🇨🇦" },
   { country: "Egypt", code: "+20", flag: "🇪🇬" },
   { country: "India", code: "+91", flag: "🇮🇳" },
   { country: "Other", code: "custom", flag: "" },
@@ -40,8 +39,19 @@ export default function Register() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
-  const searchParams = useSearchParams();
-  const referralCodeFromUrl = searchParams.get("ref");
+
+  // 🔥 REPLACED useSearchParams WITH SAFE STATE + USEEFFECT
+  const [referralCodeFromUrl, setReferralCodeFromUrl] = useState("");
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const urlParams = new URLSearchParams(window.location.search);
+      const ref = urlParams.get("ref");
+      if (ref) {
+        setReferralCodeFromUrl(ref);
+      }
+    }
+  }, []);
 
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -67,19 +77,16 @@ export default function Register() {
     e.preventDefault();
     setError("");
 
-    // 1. Validate passwords match
     if (formData.password !== formData.confirmPassword) {
       setError("Passwords do not match. Please try again.");
       return;
     }
 
-    // 2. Basic password strength check
     if (formData.password.length < 6) {
       setError("Password must be at least 6 characters.");
       return;
     }
 
-    // 3. Validate username
     if (formData.username.length < 3) {
       setError("Username must be at least 3 characters.");
       return;
@@ -88,10 +95,8 @@ export default function Register() {
     setLoading(true);
 
     try {
-      // 4. CHECK FOR DUPLICATE ACCOUNTS
       const usersRef = collection(db, "users");
 
-      // Check Email
       const emailQuery = query(usersRef, where("email", "==", formData.email));
       const emailSnapshot = await getDocs(emailQuery);
       if (!emailSnapshot.empty) {
@@ -100,7 +105,6 @@ export default function Register() {
         return;
       }
 
-      // Check Username
       const usernameQuery = query(
         usersRef,
         where("username", "==", formData.username),
@@ -112,7 +116,6 @@ export default function Register() {
         return;
       }
 
-      // Check Phone Number
       const phoneQuery = query(
         usersRef,
         where("phoneNumber", "==", formData.phoneNumber),
@@ -124,7 +127,6 @@ export default function Register() {
         return;
       }
 
-      // 5. Create the user in Firebase Authentication
       const userCredential = await createUserWithEmailAndPassword(
         auth,
         formData.email,
@@ -132,10 +134,8 @@ export default function Register() {
       );
       const user = userCredential.user;
 
-      // 6. Generate unique referral code
       const referralCode = user.uid.substring(0, 8).toUpperCase();
 
-      // 7. Save details in Firestore
       await setDoc(doc(db, "users", user.uid), {
         fullName: formData.fullName,
         username: formData.username,
@@ -152,13 +152,13 @@ export default function Register() {
         coinBalance: 0,
         walletBalance: 0,
         isEmailVerified: false,
-        profileLockedUntil: null, // Will be set after first edit
+        profileLockedUntil: null,
         createdAt: serverTimestamp(),
         followers: [],
         following: [],
       });
 
-      // 8. PROCESS REFERRAL IF EXISTS
+      // 🔥 REFERRAL LOGIC (Now uses the safe state variable)
       if (referralCodeFromUrl) {
         const referrerQuery = query(
           collection(db, "users"),
@@ -170,19 +170,16 @@ export default function Register() {
           const referrerDoc = referrerSnapshot.docs[0];
           const referrerId = referrerDoc.id;
 
-          // Reward the NEW user (100 coins)
           await updateDoc(doc(db, "users", user.uid), {
             coinBalance: increment(100),
             referredBy: referrerId,
           });
 
-          // Reward the REFERRER (100 coins + increment count)
           await updateDoc(doc(db, "users", referrerId), {
             coinBalance: increment(100),
             totalReferrals: increment(1),
           });
 
-          // Log the referral transaction for referrer
           await addDoc(collection(db, "transactions"), {
             userId: referrerId,
             type: "referral_reward",
@@ -193,7 +190,6 @@ export default function Register() {
             createdAt: serverTimestamp(),
           });
 
-          // Log for the new user
           await addDoc(collection(db, "transactions"), {
             userId: user.uid,
             type: "referral_bonus",
@@ -206,10 +202,8 @@ export default function Register() {
         }
       }
 
-      // 9. Send the verification email
       await sendEmailVerification(user);
 
-      // 10. Success! Redirect them
       alert(
         "✅ Account created successfully! Please check your email to verify your account.",
       );
@@ -250,7 +244,6 @@ export default function Register() {
         )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          {/* Full Name */}
           <div>
             <label className="block text-sm text-gray-400 mb-1">
               Full Name (For Withdrawals)
@@ -266,7 +259,6 @@ export default function Register() {
             />
           </div>
 
-          {/* Username */}
           <div>
             <label className="block text-sm text-gray-400 mb-1">
               Username (Public Display)
@@ -285,7 +277,6 @@ export default function Register() {
             </p>
           </div>
 
-          {/* Email */}
           <div>
             <label className="block text-sm text-gray-400 mb-1">
               Email Address
@@ -301,7 +292,6 @@ export default function Register() {
             />
           </div>
 
-          {/* Country */}
           <div>
             <label className="block text-sm text-gray-400 mb-1">Country</label>
             <input
@@ -314,7 +304,6 @@ export default function Register() {
             />
           </div>
 
-          {/* Phone Number */}
           <div>
             <label className="block text-sm text-gray-400 mb-1">
               Phone Number
@@ -356,7 +345,6 @@ export default function Register() {
             </p>
           </div>
 
-          {/* Password */}
           <div className="relative">
             <label className="block text-sm text-gray-400 mb-1">Password</label>
             <input
@@ -372,11 +360,10 @@ export default function Register() {
               onClick={() => setShowPassword(!showPassword)}
               className="absolute right-3 top-9 text-gray-400 hover:text-white"
             >
-              {showPassword ? "" : "👁️"}
+              {showPassword ? "🙈" : "👁️"}
             </button>
           </div>
 
-          {/* Confirm Password */}
           <div className="relative">
             <label className="block text-sm text-gray-400 mb-1">
               Confirm Password
@@ -398,7 +385,6 @@ export default function Register() {
             </button>
           </div>
 
-          {/* Submit Button */}
           <button
             type="submit"
             disabled={loading}
