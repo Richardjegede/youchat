@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation"; // 🔥 REMOVED useSearchParams
 import { db, auth } from "../../lib/firebase";
 import {
   collection,
@@ -20,8 +20,16 @@ import ProtectedRoute from "../../components/ProtectedRoute";
 
 export default function CreateShopPage() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const urlPlan = searchParams.get("plan"); // Gets 'free', '6-month', or 'yearly'
+
+  // 🔥 REPLACED useSearchParams WITH SAFE STATE + USEEFFECT
+  const [urlPlan, setUrlPlan] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      setUrlPlan(params.get("plan"));
+    }
+  }, []);
 
   const [user, setUser] = useState<any>(null);
   const [coinBalance, setCoinBalance] = useState(0);
