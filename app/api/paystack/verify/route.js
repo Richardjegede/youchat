@@ -46,7 +46,7 @@ export default function PaymentCallback() {
 
       try {
         setStatus("✅ Contacting Paystack...");
-        
+
         // 3. Verify with our API
         const res = await fetch(`/api/paystack/verify?reference=${reference}`);
         const data = await res.json();
@@ -58,9 +58,11 @@ export default function PaymentCallback() {
           setStatus(`💰 Adding ${coinsToAdd} coins to your wallet...`);
 
           // 4. Update Firestore
-          await updateDoc(doc(db, "users", (user.uid), {
-            coinBalance: increment(coinsToAdd),
-          });
+          await updateDoc(
+            doc(db, "users", user.uid, {
+              coinBalance: increment(coinsToAdd),
+            }),
+          );
 
           setStatus(`🎉 Success! ${coinsToAdd} coins added.`);
           setIsProcessing(false);
@@ -69,7 +71,6 @@ export default function PaymentCallback() {
           setTimeout(() => {
             router.push("/gifts");
           }, 2500);
-
         } else {
           setStatus("❌ Payment verification failed.");
           setIsProcessing(false);
