@@ -2,54 +2,71 @@
 
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { auth, db } from "../../lib/firebase";
-import { doc, updateDoc, increment } from "firebase/firestore";
+import { auth } from "../../lib/firebase";
 
 export default function PaymentCallback() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [status, setStatus] = useState("Processing...");
+  const [status, setStatus] = useState("Verifying transaction securely...");
+  const [isProcessing, setIsProcessing] = useState(true);
 
   useEffect(() => {
     const processPayment = async () => {
       const reference = searchParams.get("reference");
 
       if (!reference) {
-        setStatus("❌ Invalid payment");
-        setTimeout(() => router.push("/gifts"), 2000);
+        setStatus("❌ Invalid payment link.");
+        setIsProcessing(false);
+        setTimeout(() => router.push("/gifts"), 3000);
+        return;
+      }
+
+      // Wait briefly for auth to initialize
+      const user = await new Promise((resolve) => {
+        const unsubscribe = auth.onAuthStateChanged((currentUser) => {
+          unsubscribe();
+          resolve(currentUser);
+        });
+        setTimeout(() => {
+          unsubscribe();
+          resolve(auth.currentUser);
+        }, 2000);
+      });
+
+      if (!user) {
+        setStatus("❌ Session expired. Please log in.");
+        setIsProcessing(false);
+        setTimeout(() => router.push("/login"), 3000);
         return;
       }
 
       try {
-        // Simple verification
+        setStatus("✅ Contacting Paystack server...");
+
+        // 🔥 Call our SECURE API route (The API handles the database update safely!)
         const res = await fetch(`/api/paystack/verify?reference=${reference}`);
         const data = await res.json();
 
-        if (data.status && data.data?.status === "success") {
-          const amount = data.data.amount / 100;
-          const coins = amount / 10;
+        if (data.status && data.data && data.data.status === "success") {
+          const amountPaid = data.data.amount / 100; // Convert kobo to Naira
+          const coinsToAdd = amountPaid / 10; // ₦10 = 1 coin (Adjust if your ratio is different)
 
-          // Update balance
-          const user = auth.currentUser;
-          if (user) {
-            await updateDoc(doc(db, "users", user.uid), {
-              coinBalance: increment(coins),
-            });
+          setStatus(`🎉 Success! ${coinsToAdd} coins added to your wallet.`);
+          setIsProcessing(false);
 
-            setStatus(`✅ Success! ${coins} coins added`);
-            setTimeout(() => router.push("/gifts"), 2000);
-          } else {
-            setStatus("❌ Not logged in");
-            setTimeout(() => router.push("/login"), 2000);
-          }
+          setTimeout(() => {
+            router.push("/gifts");
+          }, 2500);
         } else {
-          setStatus("❌ Payment failed");
-          setTimeout(() => router.push("/gifts"), 2000);
+          setStatus("❌ Payment verification failed.");
+          setIsProcessing(false);
+          setTimeout(() => router.push("/gifts"), 3000);
         }
       } catch (err) {
-        console.error(err);
-        setStatus("❌ Error occurred");
-        setTimeout(() => router.push("/gifts"), 2000);
+        console.error("Callback error:", err);
+        setStatus("❌ Network error. Please contact support.");
+        setIsProcessing(false);
+        setTimeout(() => router.push("/gifts"), 3000);
       }
     };
 
@@ -57,11 +74,13 @@ export default function PaymentCallback() {
   }, [searchParams, router]);
 
   return (
-    <div className="min-h-screen bg-black flex items-center justify-center text-white">
-      <div className="text-center">
-        <div className="w-12 h-12 border-4 border-cyan-400 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-        <h1 className="text-xl font-bold">{status}</h1>
-      </div>
+    <div className="min-h-screen bg-[#0a0a0a] flex flex-col items-center justify-center text-white">
+      {isProcessing && (
+        <div className="w-16 h-16 border-4 border-cyan-400 border-t-transparent rounded-full animate-spin mb-6"></div>
+      )}
+      {!isProcessing && <div className="text-6xl mb-6">✅</div>}
+      <h1 className="text-2xl font-bold mb-2 text-center px-4">{status}</h1>
+      <p className="text-gray-400 text-sm">Please do not close this window.</p>
     </div>
   );
 }
