@@ -58,7 +58,7 @@ export default function PaymentCallback() {
           setStatus(`💰 Adding ${coinsToAdd} coins to your wallet...`);
 
           // 4. Update Firestore
-          await updateDoc(doc(db, "users", (user as any).uid), {
+          await updateDoc(doc(db, "users", (user.uid), {
             coinBalance: increment(coinsToAdd),
           });
 
