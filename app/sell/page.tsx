@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation"; // 🔥 REMOVED useSearchParams
 import {
   collection,
   addDoc,
@@ -15,12 +15,20 @@ import {
   increment,
 } from "firebase/firestore";
 import { auth, db } from "../lib/firebase";
-import ProtectedRoute from "../components/ProtectedRoute"; // 🔥 Kept for bottom nav!
+import ProtectedRoute from "../components/ProtectedRoute";
 
 export default function Sell() {
   const router = useRouter();
-  const searchParams = useSearchParams();
-  const urlShopId = searchParams.get("shopId");
+
+  // 🔥 REPLACED useSearchParams WITH SAFE STATE + USEEFFECT
+  const [urlShopId, setUrlShopId] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      setUrlShopId(params.get("shopId"));
+    }
+  }, []);
 
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -41,7 +49,6 @@ export default function Sell() {
     sellerPhone: "",
   });
 
-  // 🔥 CHANGED TO ARRAYS FOR MULTI-IMAGE
   const [imageFiles, setImageFiles] = useState<File[]>([]);
   const [imagePreviews, setImagePreviews] = useState<string[]>([]);
 
@@ -71,7 +78,6 @@ export default function Sell() {
             const plan = defaultShop.plan || "free";
             setShopPlan(plan);
 
-            // 🔥 SET MAX IMAGES BASED ON PLAN
             if (plan === "free") setMaxImages(10);
             else if (plan === "6-month") setMaxImages(15);
             else if (plan === "yearly") setMaxImages(20);
@@ -92,7 +98,6 @@ export default function Sell() {
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  // 🔥 HANDLE MULTIPLE IMAGE SELECTION
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
@@ -115,7 +120,6 @@ export default function Sell() {
     setImagePreviews(newPreviews);
   };
 
-  // 🔥 REMOVE AN IMAGE
   const removeImage = (index: number) => {
     const newFiles = imageFiles.filter((_, i) => i !== index);
     const newPreviews = imagePreviews.filter((_, i) => i !== index);
@@ -153,7 +157,6 @@ export default function Sell() {
     setUploading(true);
 
     try {
-      // 🔥 UPLOAD ALL IMAGES SIMULTANEOUSLY
       const uploadPromises = imageFiles.map((file) => uploadToCloudinary(file));
       const imageUrls = await Promise.all(uploadPromises);
 
@@ -168,8 +171,8 @@ export default function Sell() {
         price: Number(formData.price),
         description: formData.description,
         campus: formData.campus,
-        images: imageUrls, // 🔥 SAVED AS ARRAY OF IMAGES
-        imageUrl: imageUrls[0], // Keep first image as thumbnail for backwards compatibility
+        images: imageUrls,
+        imageUrl: imageUrls[0],
         sellerId: auth.currentUser.uid,
         shopId: selectedShopId || null,
         sellerEmail: auth.currentUser.email,
@@ -180,7 +183,6 @@ export default function Sell() {
         createdAt: serverTimestamp(),
       });
 
-      // 🔥 INCREMENT THE SHOP'S PRODUCT COUNT!
       if (selectedShopId) {
         await updateDoc(doc(db, "shops", selectedShopId), {
           productCount: increment(1),
@@ -214,7 +216,6 @@ export default function Sell() {
             onSubmit={handleSubmit}
             className="bg-[#111] border border-gray-800 rounded-2xl p-6 md:p-8 space-y-6"
           >
-            {/* 🔥 SHOP SELECTOR */}
             {userShops.length > 0 && (
               <div>
                 <label className="block text-sm font-semibold text-gray-300 mb-2">
@@ -255,13 +256,10 @@ export default function Sell() {
               </div>
             )}
 
-            {/* 🔥 MULTI-IMAGE UPLOAD AREA */}
             <div>
               <label className="block text-sm font-semibold text-gray-300 mb-2">
                 Product Photos ({imageFiles.length}/{maxImages})
               </label>
-
-              {/* Image Previews Grid */}
               {imagePreviews.length > 0 && (
                 <div className="grid grid-cols-3 sm:grid-cols-4 gap-3 mb-4">
                   {imagePreviews.map((preview, index) => (
@@ -297,8 +295,6 @@ export default function Sell() {
                   ))}
                 </div>
               )}
-
-              {/* Upload Button */}
               {imageFiles.length < maxImages && (
                 <div className="relative border-2 border-dashed border-gray-700 rounded-xl p-8 text-center hover:border-cyan-500 transition cursor-pointer bg-[#0a0a0a]">
                   <input
@@ -334,7 +330,6 @@ export default function Sell() {
               )}
             </div>
 
-            {/* TITLE */}
             <div>
               <label className="block text-sm font-semibold text-gray-300 mb-2">
                 Item Title
@@ -350,7 +345,6 @@ export default function Sell() {
               />
             </div>
 
-            {/* CATEGORY & PRICE ROW */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-semibold text-gray-300 mb-2">
@@ -393,7 +387,6 @@ export default function Sell() {
               </div>
             </div>
 
-            {/* CAMPUS LOCATION */}
             <div>
               <label className="block text-sm font-semibold text-gray-300 mb-2">
                 Campus Location
@@ -417,7 +410,6 @@ export default function Sell() {
               </select>
             </div>
 
-            {/* DESCRIPTION */}
             <div>
               <label className="block text-sm font-semibold text-gray-300 mb-2">
                 Description
@@ -433,7 +425,6 @@ export default function Sell() {
               ></textarea>
             </div>
 
-            {/* PHONE NUMBER */}
             <div>
               <label className="block text-sm font-semibold text-gray-300 mb-2">
                 WhatsApp Number
@@ -452,7 +443,6 @@ export default function Sell() {
               </p>
             </div>
 
-            {/* SUBMIT BUTTON */}
             <button
               type="submit"
               disabled={loading || uploading}
