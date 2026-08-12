@@ -1,19 +1,19 @@
 "use client";
 
-import { useEffect, useState, Suspense } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { auth } from "../../lib/firebase";
 
-// 🔥 1. THE ACTUAL CONTENT COMPONENT (Uses useSearchParams)
-function CallbackContent() {
+export default function PaymentCallback() {
   const router = useRouter();
-  const searchParams = useSearchParams();
   const [status, setStatus] = useState("Verifying transaction securely...");
   const [isProcessing, setIsProcessing] = useState(true);
 
   useEffect(() => {
     const processPayment = async () => {
-      const reference = searchParams.get("reference");
+      // 🔥 USE NATIVE BROWSER API INSTEAD OF useSearchParams TO AVOID BUILD ERRORS
+      const urlParams = new URLSearchParams(window.location.search);
+      const reference = urlParams.get("reference");
 
       if (!reference) {
         setStatus("❌ Invalid payment link.");
@@ -72,7 +72,7 @@ function CallbackContent() {
     };
 
     processPayment();
-  }, [searchParams, router]);
+  }, [router]); // Removed searchParams from dependency array
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] flex flex-col items-center justify-center text-white">
@@ -83,26 +83,5 @@ function CallbackContent() {
       <h1 className="text-2xl font-bold mb-2 text-center px-4">{status}</h1>
       <p className="text-gray-400 text-sm">Please do not close this window.</p>
     </div>
-  );
-}
-
-// 🔥 2. THE MAIN EXPORT WRAPPED IN SUSPENSE
-export default function PaymentCallback() {
-  return (
-    <Suspense
-      fallback={
-        <div className="min-h-screen bg-[#0a0a0a] flex flex-col items-center justify-center text-white">
-          <div className="w-16 h-16 border-4 border-cyan-400 border-t-transparent rounded-full animate-spin mb-6"></div>
-          <h1 className="text-2xl font-bold mb-2 text-center px-4">
-            Loading Payment...
-          </h1>
-          <p className="text-gray-400 text-sm">
-            Please do not close this window.
-          </p>
-        </div>
-      }
-    >
-      <CallbackContent />
-    </Suspense>
   );
 }
