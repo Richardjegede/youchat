@@ -52,13 +52,20 @@ export default function GiftStore() {
 
   const handleAddCoins = async (amount: number) => {
     try {
+      // 🔥 1. CALCULATE THE COINS (₦10 = 1 coin)
+      const coinsToAdd = amount / 10;
+
       const response = await fetch("/api/paystack/initialize", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           email: user.email,
-          amount: amount * 100,
-          metadata: { type: "coins_purchase", userId: user.uid },
+          amount: amount * 100, // Paystack expects Kobo
+          metadata: {
+            type: "coins_purchase",
+            userId: user.uid,
+            coinsToAdd: coinsToAdd, // 🔥 2. THIS IS THE MISSING PIECE!
+          },
         }),
       });
 
@@ -66,11 +73,13 @@ export default function GiftStore() {
       if (data.status && data.authorization_url) {
         window.location.href = data.authorization_url;
       } else {
-        alert("Failed to initialize payment");
+        alert(
+          "Failed to initialize payment: " + (data.message || "Unknown error"),
+        );
       }
     } catch (err) {
       console.error(err);
-      alert("Payment error");
+      alert("Payment error occurred");
     }
   };
 
